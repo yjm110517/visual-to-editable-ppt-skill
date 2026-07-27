@@ -1,0 +1,7 @@
+# Runtime baseline: Python >=3.10; validated with Python 3.12.13.
+Pillow==10.4.0
+python-pptx==1.0.2
+jsonschema==4.26.0
+defusedxml==0.7.1
+PyYAML==6.0.2
+pywin32==311; sys_platform == "win32"

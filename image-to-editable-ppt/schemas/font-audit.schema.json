@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "font-audit.schema.json",
+  "title": "Font Audit Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "ppt_sha256", "font_violations", "used_fonts", "missing_fonts", "runs", "warnings"],
+  "properties": {
+    "schema_version": {"const": "1.3"},
+    "status": {"enum": ["pass", "fail"]},
+    "ppt_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "font_violations": {"type": "integer", "minimum": 0},
+    "used_fonts": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "missing_fonts": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slide_index", "object_name", "container", "paragraph_index", "run_index", "expected_font_face", "expected_size_pt", "actual_font_faces", "actual_size_pt", "installed", "compliant", "violations"],
+        "properties": {
+          "slide_index": {"type": "integer", "minimum": 1},
+          "object_name": {"type": "string", "minLength": 1},
+          "container": {"enum": ["text_box", "table_cell"]},
+          "paragraph_index": {"type": "integer", "minimum": 0},
+          "run_index": {"type": "integer", "minimum": 0},
+          "expected_font_face": {"type": ["string", "null"], "minLength": 1},
+          "expected_size_pt": {"type": ["number", "null"], "exclusiveMinimum": 0},
+          "actual_font_faces": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["latin", "ea", "cs"],
+            "properties": {
+              "latin": {"type": ["string", "null"]},
+              "ea": {"type": ["string", "null"]},
+              "cs": {"type": ["string", "null"]}
+            }
+          },
+          "actual_size_pt": {"type": ["number", "null"], "exclusiveMinimum": 0},
+          "installed": {"type": ["boolean", "null"]},
+          "compliant": {"type": "boolean"},
+          "violations": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+        }
+      }
+    },
+    "warnings": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+  }
+}

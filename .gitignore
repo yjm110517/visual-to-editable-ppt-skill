@@ -1,0 +1,26 @@
+# Python environments and caches
+.venv/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node dependencies and caches
+**/node_modules/
+.pnpm-store/
+
+# Runtime work products
+/work/
+/image-to-editable-ppt/work/
+**/.agent-runtime/
+
+# Local configuration and temporary files
+.env
+.env.*
+!.env.example
+*.tmp
+*.temp
+~$*
+.DS_Store
+Thumbs.db

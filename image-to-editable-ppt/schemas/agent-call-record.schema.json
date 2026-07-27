@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-call-record.schema.json",
+  "title": "Agent Call Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "task_id", "iteration", "role", "role_version", "model_selection_mode", "requested_model", "config_sha256", "prompt_sha256", "output_schema_sha256", "input_sha256", "parameters", "call_id", "context_id", "parent_context_id", "status"],
+  "properties": {
+    "schema_version": {"const": "1.3"},
+    "task_id": {"type": "string", "minLength": 1},
+    "iteration": {"type": "integer", "minimum": 1},
+    "role": {"enum": ["planner", "reviewer"]},
+    "role_version": {"type": "string", "pattern": "^1\\.3\\.[0-9]+$"},
+    "model_selection_mode": {"enum": ["runtime-default", "explicit", "allowlist"]},
+    "requested_model": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {"type": "null"}
+      ]
+    },
+    "config_sha256": {"$ref": "#/$defs/hash"},
+    "prompt_sha256": {"$ref": "#/$defs/hash"},
+    "output_schema_sha256": {"$ref": "#/$defs/hash"},
+    "input_sha256": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/hash"}
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["temperature", "top_p", "seed"],
+      "properties": {
+        "temperature": {"type": "number", "minimum": 0, "maximum": 2},
+        "top_p": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+        "seed": {"type": ["integer", "null"]}
+      }
+    },
+    "call_id": {"type": "string", "minLength": 1},
+    "context_id": {"type": "string", "minLength": 1},
+    "parent_context_id": {"type": "null"},
+    "status": {"enum": ["succeeded", "failed"]}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

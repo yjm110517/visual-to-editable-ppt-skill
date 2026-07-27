@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "request.schema.json",
+  "title": "Image to Editable PPT Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "task_id", "topic", "source_image", "output_ratio", "typography_interaction", "typography", "editability_policy", "user_requirements", "review_policy"],
+  "properties": {
+    "schema_version": {"const": "1.3"},
+    "task_id": {"type": "string", "minLength": 1},
+    "topic": {"type": "string", "minLength": 1},
+    "source_image": {"type": "string", "minLength": 1},
+    "output_ratio": {"type": "string", "minLength": 1},
+    "typography_interaction": {"enum": ["ask", "match-source", "default"]},
+    "typography": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title_font", "title_size_pt", "body_font", "body_size_pt"],
+      "properties": {
+        "title_font": {"type": "string", "minLength": 1},
+        "title_size_pt": {"type": "number", "exclusiveMinimum": 0},
+        "body_font": {"type": "string", "minLength": 1},
+        "body_size_pt": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "editability_policy": {"enum": ["text-only", "text-and-structure"]},
+    "user_requirements": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "review_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_iterations", "pass_score", "warning_floor_score", "min_content_accuracy", "required_editability_score", "critical_policy"],
+      "properties": {
+        "max_iterations": {"type": "integer", "minimum": 1},
+        "pass_score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "warning_floor_score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "min_content_accuracy": {"type": "integer", "minimum": 0, "maximum": 100},
+        "required_editability_score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "critical_policy": {"const": "by_recoverability"}
+      }
+    }
+  }
+}

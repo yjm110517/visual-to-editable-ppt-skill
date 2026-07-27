@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planner-response.schema.json",
+  "title": "Layout Planner Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "task_id", "iteration", "mode", "artifacts"],
+  "properties": {
+    "schema_version": {"const": "1.3"},
+    "task_id": {"type": "string", "minLength": 1},
+    "iteration": {"type": "integer", "minimum": 1},
+    "mode": {"enum": ["initial", "revision"]},
+    "artifacts": {"type": "object"},
+    "representation_inventory_complete": {"const": true},
+    "representation_decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "visual_kind",
+          "source_region",
+          "complexity_signals",
+          "selected_representation",
+          "element_ids",
+          "asset_ids",
+          "contains_readable_text",
+          "fidelity_risk",
+          "rationale"
+        ],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "visual_kind": {
+            "enum": [
+              "simple_vector",
+              "complex_icon",
+              "illustration",
+              "photograph",
+              "texture",
+              "brand_mark",
+              "background_decoration"
+            ]
+          },
+          "source_region": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["x", "y", "w", "h"],
+            "properties": {
+              "x": {"type": "number", "minimum": 0, "maximum": 1},
+              "y": {"type": "number", "minimum": 0, "maximum": 1},
+              "w": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+              "h": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}
+            }
+          },
+          "complexity_signals": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "gradient",
+                "highlight",
+                "inner_shadow",
+                "soft_shadow",
+                "transparency",
+                "three_dimensional",
+                "texture",
+                "photographic_detail",
+                "irregular_detail"
+              ]
+            }
+          },
+          "selected_representation": {"enum": ["native", "svg", "crop"]},
+          "element_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "asset_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "contains_readable_text": {"type": "boolean"},
+          "fidelity_risk": {"enum": ["low", "medium", "high"]},
+          "rationale": {"type": "string", "minLength": 8}
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"selected_representation": {"const": "native"}}, "required": ["selected_representation"]},
+            "then": {
+              "properties": {
+                "element_ids": {"minItems": 1},
+                "asset_ids": {"maxItems": 0}
+              }
+            }
+          },
+          {
+            "if": {"properties": {"selected_representation": {"enum": ["svg", "crop"]}}, "required": ["selected_representation"]},
+            "then": {
+              "properties": {
+                "element_ids": {"minItems": 1},
+                "asset_ids": {"minItems": 1}
+              }
+            }
+          }
+        ]
+      }
+    },
+    "generated_assets": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset_id", "filename", "media_type", "content"],
+        "properties": {
+          "asset_id": {"type": "string", "minLength": 1},
+          "filename": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\.svg$"},
+          "media_type": {"const": "image/svg+xml"},
+          "content": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"mode": {"const": "initial"}}, "required": ["mode"]},
+      "then": {
+        "required": ["generated_assets", "representation_inventory_complete", "representation_decisions"],
+        "properties": {
+          "artifacts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["layout", "crops", "asset_manifest"],
+            "properties": {
+              "layout": {"type": "object"},
+              "crops": {"type": "object"},
+              "asset_manifest": {"type": "object"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"mode": {"const": "revision"}}, "required": ["mode"]},
+      "then": {
+        "not": {
+          "anyOf": [
+            {"required": ["generated_assets"]},
+            {"required": ["representation_inventory_complete"]},
+            {"required": ["representation_decisions"]}
+          ]
+        },
+        "properties": {
+          "artifacts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["review_patch"],
+            "properties": {"review_patch": {"type": "object"}}
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review-evaluation.schema.json",
+  "title": "Deterministic Review Evaluation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "task_id", "iteration", "reviewer_recommendation", "computed_scores", "issue_counts", "anchor_consistent", "score_adjustments", "policy_decision", "recommendation_relation", "recommendation_relation_reason", "decision_reasons", "inputs"],
+  "properties": {
+    "schema_version": {"const": "1.3"},
+    "task_id": {"type": "string", "minLength": 1},
+    "iteration": {"type": "integer", "minimum": 1},
+    "reviewer_recommendation": {"enum": ["pass", "revise", "fail"]},
+    "computed_scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content_accuracy", "layout_similarity", "typography_similarity", "visual_style_similarity", "asset_quality", "editability", "overall_score"],
+      "properties": {
+        "content_accuracy": {"type": "integer", "minimum": 0, "maximum": 100},
+        "layout_similarity": {"type": "integer", "minimum": 0, "maximum": 100},
+        "typography_similarity": {"type": "integer", "minimum": 0, "maximum": 100},
+        "visual_style_similarity": {"type": "integer", "minimum": 0, "maximum": 100},
+        "asset_quality": {"type": "integer", "minimum": 0, "maximum": 100},
+        "editability": {"type": "integer", "enum": [0, 100]},
+        "overall_score": {"type": "integer", "minimum": 0, "maximum": 100}
+      }
+    },
+    "issue_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["critical_recoverable", "critical_irrecoverable", "critical_unknown", "major", "minor", "suggestion"],
+      "properties": {
+        "critical_recoverable": {"type": "integer", "minimum": 0},
+        "critical_irrecoverable": {"type": "integer", "minimum": 0},
+        "critical_unknown": {"type": "integer", "minimum": 0},
+        "major": {"type": "integer", "minimum": 0},
+        "minor": {"type": "integer", "minimum": 0},
+        "suggestion": {"type": "integer", "minimum": 0}
+      }
+    },
+    "anchor_consistent": {"type": "boolean"},
+    "score_adjustments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["dimension", "raw_score", "applied_cap", "computed_score", "reason"],
+        "properties": {
+          "dimension": {"enum": ["content_accuracy", "layout_similarity", "typography_similarity", "visual_style_similarity", "asset_quality"]},
+          "raw_score": {"type": "integer", "minimum": 0, "maximum": 100},
+          "applied_cap": {"type": "integer", "minimum": 0, "maximum": 100},
+          "computed_score": {"type": "integer", "minimum": 0, "maximum": 100},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "policy_decision": {"enum": ["pass", "revise", "fail", "warning_candidate"]},
+    "recommendation_relation": {"enum": ["exact_match", "policy_stricter", "policy_looser", "policy_override", "not_comparable"]},
+    "recommendation_relation_reason": {"type": "string", "minLength": 1},
+    "decision_reasons": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["review_report_sha256", "qa_report_sha256", "request_sha256"],
+      "properties": {
+        "review_report_sha256": {"$ref": "#/$defs/hash"},
+        "qa_report_sha256": {"$ref": "#/$defs/hash"},
+        "request_sha256": {"$ref": "#/$defs/hash"}
+      }
+    }
+  },
+  "$defs": {"hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}
+}

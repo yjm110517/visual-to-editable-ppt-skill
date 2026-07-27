@@ -1,0 +1,303 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "layout.schema.json",
+  "title": "Editable PPT Layout",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request", "source", "slide", "metadata", "asset_manifest", "styles", "elements"],
+  "properties": {
+    "schema_version": {"const": "1.3"},
+    "request": {"type": "string", "minLength": 1},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image", "width_px", "height_px"],
+      "properties": {
+        "image": {"type": "string", "minLength": 1},
+        "width_px": {"type": "integer", "minimum": 1},
+        "height_px": {"type": "integer", "minimum": 1}
+      }
+    },
+    "slide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width_in", "height_in", "background"],
+      "properties": {
+        "width_in": {"type": "number", "exclusiveMinimum": 0},
+        "height_in": {"type": "number", "exclusiveMinimum": 0},
+        "background": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"}
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["topic", "iteration", "typography_interaction"],
+      "properties": {
+        "topic": {"type": "string", "minLength": 1},
+        "iteration": {"type": "integer", "minimum": 1},
+        "typography_interaction": {"enum": ["ask", "match-source", "default"]}
+      }
+    },
+    "asset_manifest": {"type": "string", "minLength": 1},
+    "styles": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/style"}
+    },
+    "elements": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {"$ref": "#/$defs/textElement"},
+          {"$ref": "#/$defs/shapeElement"},
+          {"$ref": "#/$defs/lineElement"},
+          {"$ref": "#/$defs/imageElement"}
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?$"},
+    "fill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["color"],
+      "properties": {
+        "color": {"$ref": "#/$defs/color"},
+        "transparency": {"type": "number", "minimum": 0, "maximum": 100}
+      },
+      "not": {
+        "required": ["color", "transparency"],
+        "properties": {"color": {"pattern": "^#[0-9A-Fa-f]{8}$"}}
+      }
+    },
+    "lineStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["color", "width_pt"],
+      "properties": {
+        "color": {"$ref": "#/$defs/color"},
+        "transparency": {"type": "number", "minimum": 0, "maximum": 100},
+        "width_pt": {"type": "number", "exclusiveMinimum": 0},
+        "dash": {"enum": ["solid", "dash", "dashDot", "lgDash", "lgDashDot", "lgDashDotDot", "sysDash", "sysDot"]},
+        "begin_arrow": {"enum": ["none", "arrow", "diamond", "oval", "stealth", "triangle"]},
+        "end_arrow": {"enum": ["none", "arrow", "diamond", "oval", "stealth", "triangle"]}
+      },
+      "not": {
+        "required": ["color", "transparency"],
+        "properties": {"color": {"pattern": "^#[0-9A-Fa-f]{8}$"}}
+      }
+    },
+    "shadow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["color", "opacity", "blur_pt", "angle", "offset_pt"],
+      "properties": {
+        "color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "opacity": {"type": "number", "minimum": 0, "maximum": 1},
+        "blur_pt": {"type": "number", "minimum": 0},
+        "angle": {"type": "number", "minimum": 0, "maximum": 359.999},
+        "offset_pt": {"type": "number", "minimum": 0}
+      }
+    },
+    "bullet": {
+      "oneOf": [
+        {"const": true},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": {"enum": ["bullet", "number"]},
+            "character_code": {"type": "string", "pattern": "^[0-9A-Fa-f]{4}$"},
+            "style": {"enum": ["alphaLcParenBoth", "alphaLcParenR", "alphaLcPeriod", "alphaUcParenBoth", "alphaUcParenR", "alphaUcPeriod", "arabicParenBoth", "arabicParenR", "arabicPeriod", "arabicPlain", "romanLcParenBoth", "romanLcParenR", "romanLcPeriod", "romanUcParenBoth", "romanUcParenR", "romanUcPeriod"]},
+            "start_at": {"type": "integer", "minimum": 1},
+            "indent_pt": {"type": "number", "minimum": 0}
+          }
+        }
+      ]
+    },
+    "textStyleProperties": {
+      "type": "object",
+      "properties": {
+        "font_face": {"type": "string", "minLength": 1},
+        "font_size_pt": {"type": "number", "exclusiveMinimum": 0},
+        "bold": {"type": "boolean"},
+        "italic": {"type": "boolean"},
+        "underline": {"type": "boolean"},
+        "color": {"$ref": "#/$defs/color"},
+        "transparency": {"type": "number", "minimum": 0, "maximum": 100},
+        "align": {"enum": ["left", "center", "right", "justify"]},
+        "valign": {"enum": ["top", "middle", "bottom"]},
+        "margin_in": {
+          "oneOf": [
+            {"type": "number", "minimum": 0},
+            {"type": "array", "minItems": 4, "maxItems": 4, "items": {"type": "number", "minimum": 0}}
+          ]
+        },
+        "line_spacing_pt": {"type": "number", "exclusiveMinimum": 0},
+        "line_spacing_multiple": {"type": "number", "exclusiveMinimum": 0, "maximum": 9.99},
+        "para_space_before_pt": {"type": "number", "minimum": 0},
+        "para_space_after_pt": {"type": "number", "minimum": 0},
+        "fit": {"enum": ["none", "shrink", "resize-shape"]},
+        "language": {"type": "string", "minLength": 2},
+        "bullet": {"$ref": "#/$defs/bullet"}
+      },
+      "not": {
+        "required": ["color", "transparency"],
+        "properties": {"color": {"pattern": "^#[0-9A-Fa-f]{8}$"}}
+      }
+    },
+    "style": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "font_face": {"type": "string", "minLength": 1},
+        "font_size_pt": {"type": "number", "exclusiveMinimum": 0},
+        "bold": {"type": "boolean"},
+        "italic": {"type": "boolean"},
+        "underline": {"type": "boolean"},
+        "color": {"$ref": "#/$defs/color"},
+        "transparency": {"type": "number", "minimum": 0, "maximum": 100},
+        "align": {"enum": ["left", "center", "right", "justify"]},
+        "valign": {"enum": ["top", "middle", "bottom"]},
+        "margin_in": {"oneOf": [{"type": "number", "minimum": 0}, {"type": "array", "minItems": 4, "maxItems": 4, "items": {"type": "number", "minimum": 0}}]},
+        "line_spacing_pt": {"type": "number", "exclusiveMinimum": 0},
+        "line_spacing_multiple": {"type": "number", "exclusiveMinimum": 0, "maximum": 9.99},
+        "para_space_before_pt": {"type": "number", "minimum": 0},
+        "para_space_after_pt": {"type": "number", "minimum": 0},
+        "fit": {"enum": ["none", "shrink", "resize-shape"]},
+        "language": {"type": "string", "minLength": 2},
+        "bullet": {"$ref": "#/$defs/bullet"},
+        "fill": {"$ref": "#/$defs/fill"},
+        "line": {"$ref": "#/$defs/lineStyle"},
+        "shadow": {"$ref": "#/$defs/shadow"}
+      },
+      "not": {
+        "required": ["color", "transparency"],
+        "properties": {"color": {"pattern": "^#[0-9A-Fa-f]{8}$"}}
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": {"type": "string"},
+        "font_face": {"type": "string", "minLength": 1},
+        "font_size_pt": {"type": "number", "exclusiveMinimum": 0},
+        "bold": {"type": "boolean"},
+        "italic": {"type": "boolean"},
+        "underline": {"type": "boolean"},
+        "color": {"$ref": "#/$defs/color"},
+        "transparency": {"type": "number", "minimum": 0, "maximum": 100},
+        "language": {"type": "string", "minLength": 2},
+        "break_line": {"type": "boolean"},
+        "bullet": {"$ref": "#/$defs/bullet"}
+      },
+      "not": {
+        "required": ["color", "transparency"],
+        "properties": {"color": {"pattern": "^#[0-9A-Fa-f]{8}$"}}
+      }
+    },
+    "baseProperties": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+        "type": {"enum": ["text", "shape", "line", "image"]},
+        "x": {"type": "number", "minimum": 0},
+        "y": {"type": "number", "minimum": 0},
+        "w": {"type": "number", "minimum": 0},
+        "h": {"type": "number", "minimum": 0},
+        "z_index": {"type": "integer"},
+        "rotation": {"type": "number", "minimum": -360, "maximum": 360},
+        "style_ref": {"type": "string", "minLength": 1},
+        "allow_overflow": {"type": "boolean"},
+        "editable": {"type": "boolean"}
+      },
+      "required": ["id", "type", "x", "y", "w", "h", "z_index", "editable"]
+    },
+    "textElement": {
+      "allOf": [
+        {"$ref": "#/$defs/baseProperties"},
+        {"$ref": "#/$defs/textStyleProperties"},
+        {
+          "type": "object",
+          "properties": {
+            "type": {"const": "text"},
+            "editable": {"const": true},
+            "text": {"type": "string"},
+            "runs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/run"}},
+            "editability_required": {"type": "boolean"},
+            "exemption_reason": {"type": "string", "minLength": 1}
+          },
+          "oneOf": [
+            {"required": ["text"], "not": {"required": ["runs"]}},
+            {"required": ["runs"], "not": {"required": ["text"]}}
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "shapeElement": {
+      "allOf": [
+        {"$ref": "#/$defs/baseProperties"},
+        {
+          "type": "object",
+          "required": ["shape"],
+          "properties": {
+            "type": {"const": "shape"},
+            "editable": {"const": true},
+            "shape": {"enum": ["rect", "roundRect", "ellipse", "triangle", "rtTriangle", "diamond", "hexagon", "chevron", "pentagon", "star5"]},
+            "fill": {"$ref": "#/$defs/fill"},
+            "line": {"$ref": "#/$defs/lineStyle"},
+            "shadow": {"$ref": "#/$defs/shadow"},
+            "radius_hint": {"type": "number", "minimum": 0}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "lineElement": {
+      "allOf": [
+        {"$ref": "#/$defs/baseProperties"},
+        {
+          "type": "object",
+          "required": ["line"],
+          "properties": {
+            "type": {"const": "line"},
+            "editable": {"const": true},
+            "line": {"$ref": "#/$defs/lineStyle"},
+            "from_id": {"type": "string", "minLength": 1},
+            "to_id": {"type": "string", "minLength": 1}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "imageElement": {
+      "allOf": [
+        {"$ref": "#/$defs/baseProperties"},
+        {
+          "type": "object",
+          "required": ["asset_id", "fit", "preserve_aspect_ratio"],
+          "properties": {
+            "type": {"const": "image"},
+            "editable": {"const": false},
+            "asset_id": {"type": "string", "minLength": 1},
+            "fit": {"enum": ["contain", "cover", "stretch"]},
+            "preserve_aspect_ratio": {"type": "boolean"},
+            "contains_text": {"type": "boolean"},
+            "text_editability_exempt": {"type": "boolean"},
+            "exemption_reason": {"type": "string", "minLength": 1},
+            "alt_text": {"type": "string"}
+          },
+          "allOf": [
+            {"if": {"properties": {"fit": {"const": "stretch"}}}, "then": {"properties": {"preserve_aspect_ratio": {"const": false}}}, "else": {"properties": {"preserve_aspect_ratio": {"const": true}}}},
+            {"if": {"properties": {"contains_text": {"const": true}}, "required": ["contains_text"]}, "then": {"required": ["text_editability_exempt", "exemption_reason"], "properties": {"text_editability_exempt": {"const": true}}}}
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

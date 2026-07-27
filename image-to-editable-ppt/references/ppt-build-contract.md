@@ -1,0 +1,41 @@
+# PPT Build Contract
+
+Read this reference before invoking or changing the PptxGenJS builder.
+
+## Inputs and outputs
+
+Build one slide from a validated `layout.json` and build-ready asset manifest. Keep the layout, manifest, asset directory, SVG report, PPTX, build summary, and log inside the same iteration directory.
+
+```bash
+node scripts/build_slide.mjs \
+  --iteration-dir work/topic/iterations/01 \
+  --layout work/topic/iterations/01/layout.json \
+  --asset-manifest work/topic/iterations/01/asset_manifest.json \
+  --asset-dir work/topic/iterations/01/assets \
+  --svg-report work/topic/iterations/01/svg_security_report.json \
+  --output work/topic/iterations/01/topic_editable.pptx \
+  --build-summary work/topic/iterations/01/build_summary.json \
+  --python .venv/Scripts/python.exe \
+  --run-id task-001 \
+  --iteration 1 \
+  --log-file work/topic/iterations/01/pipeline.log
+```
+
+The SVG report is required only when the manifest contains SVG. Python selection is `--python`, then `IVT_PYTHON`, then `python` on PATH.
+
+## Build rules
+
+- Support only `text`, `shape`, `line`, and `image` elements in v1.3 P3.
+- Build by ascending `z_index`, preserving layout array order for ties.
+- Write `ivt:<element_id>` to the PowerPoint selection-pane object name. Use `ivt:<element_id>#<part>` only for a real one-to-many mapping.
+- Resolve text properties in the order Run, element, referenced style. Every Run must resolve a font face, font size, and color.
+- Keep requested font names even when the local system may not contain the font. P4 performs installation and fallback auditing.
+- Resolve images only through the validated asset index returned by `validate_assets.py --emit-resolved-assets`. Recheck asset hashes immediately before embedding.
+- Treat `from_id` and `to_id` as QA metadata, not dynamic connector attachment.
+- Reject groups, tables, charts, freeform paths, gradients, and complex effects rather than silently rasterizing them.
+
+## Transaction and reproducibility
+
+Never overwrite an existing PPTX or build summary. Build both in a temporary iteration-local directory, validate the PPTX package and summary, then commit both. Remove the committed PPTX if summary commit fails.
+
+Normalize the PPTX core timestamps and ZIP entry timestamps, ordering, permissions, and compression. Identical inputs, run ID, iteration, and output name must produce identical PPTX and build-summary bytes.

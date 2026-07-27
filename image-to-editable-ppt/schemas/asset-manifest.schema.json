@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "asset-manifest.schema.json",
+  "title": "Asset Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "assets"],
+  "properties": {
+    "schema_version": {"const": "1.3"},
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "path", "source", "recolorable", "contains_text", "text_editability_exempt", "security_status"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "type": {"enum": ["png", "jpeg", "svg"]},
+          "path": {"type": "string", "minLength": 1},
+          "source": {"enum": ["cropped", "user-provided", "agent-generated", "locally-redrawn"]},
+          "width_px": {"type": "integer", "minimum": 1},
+          "height_px": {"type": "integer", "minimum": 1},
+          "size_bytes": {"type": "integer", "minimum": 1},
+          "sha256": {"type": "string", "pattern": "^(?:[A-Fa-f0-9]{64}|<sha256>)$"},
+          "view_box": {"type": "string", "minLength": 1},
+          "recolorable": {"type": "boolean"},
+          "contains_text": {"type": "boolean"},
+          "text_editability_exempt": {"type": "boolean"},
+          "exemption_reason": {"type": "string", "minLength": 1},
+          "security_status": {"enum": ["pending", "passed", "rejected"]}
+        },
+        "allOf": [
+          {"if": {"properties": {"text_editability_exempt": {"const": true}}, "required": ["text_editability_exempt"]}, "then": {"required": ["exemption_reason"]}},
+          {"if": {"properties": {"type": {"const": "svg"}}, "required": ["type"]}, "then": {"required": ["view_box"]}}
+        ]
+      }
+    }
+  }
+}
