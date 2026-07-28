@@ -1,5 +1,7 @@
 # Image to Editable PPT
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 把一张参考图片重建为真正可编辑的 PowerPoint：标题和正文仍是文本框，卡片、线条和箭头仍是原生形状，复杂图标与插画则作为独立、安全的图片资产保留。
 
 它不是简单地把整张图片铺到幻灯片上，而是帮助 Agent 分析页面结构、选择正确的重建方式、生成 PPTX、渲染预览，并验证文字与对象是否真的可编辑。
@@ -43,8 +45,11 @@
 ```text
 visual-to-editable-ppt-skill/
 ├─ README.md
+├─ LICENSE
+├─ NOTICE
 └─ image-to-editable-ppt/
    ├─ SKILL.md                 # Skill 入口与工作流
+   ├─ LICENSE / NOTICE         # 随安装包分发的许可证与归属声明
    ├─ agents/                  # Planner / Reviewer 角色与提示词
    ├─ references/              # 分类、构建、审核和交付契约
    ├─ schemas/                 # 运行时 JSON Schema
@@ -126,6 +131,20 @@ PPTX 是主要交付物；其余文件用于说明资产来源、结构完整性
 
 当前版本聚焦于高质量单页重建，支持 `text`、`shape`、`line` 和 `image` 四类元素。多页母版推断、图表、表格对象、原生分组和复杂自由路径不属于当前稳定范围；密集表格会使用原生矩形、分隔线和文本框重建。
 
+## 许可证
+
+本项目的源码、Schema、Prompt 和项目文档采用 [Apache License 2.0](LICENSE) 发布，版权归 `yjm110517` 及相应贡献者所有。
+
+Apache-2.0 允许商业使用、修改、分发和私有使用，并提供明确的贡献者专利授权。分发修改版本时，请保留 `LICENSE` 与 [NOTICE](NOTICE)，并标明所作修改。
+
+项目许可证不会自动授予对以下内容的权利：
+
+- 用户上传的图片、Logo、字体或其他素材；
+- 第三方资产及依赖；
+- 基于用户素材生成的演示文稿内容。
+
+这些内容继续适用其各自的版权、商标和许可证要求。发布包不捆绑 `node_modules` 或 Python 第三方包，安装得到的依赖仍遵循各自许可证。
+
 ## 开始使用
 
 - 阅读 [Skill 入口](image-to-editable-ppt/SKILL.md)
@@ -133,5 +152,6 @@ PPTX 是主要交付物；其余文件用于说明资产来源、结构完整性
 - 查看 [PPT 构建契约](image-to-editable-ppt/references/ppt-build-contract.md)
 - 查看 [渲染与结构 QA](image-to-editable-ppt/references/rendering-and-qa.md)
 - 从 [最新 Release](https://github.com/yjm110517/visual-to-editable-ppt-skill/releases/latest) 下载安装包
+- 查看 [Apache-2.0 许可证](LICENSE)
 
 如果你发现某类页面、图标或字体处理得不理想，欢迎提交 Issue，并附上可公开的参考图、渲染结果和期望行为。
