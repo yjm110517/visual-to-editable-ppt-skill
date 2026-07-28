@@ -66,7 +66,8 @@ def _base_id(name: str) -> str:
     return name[4:].split("#", 1)[0]
 
 
-def _matches_native_type(shape: ET.Element, expected_type: str) -> bool:
+def _matches_native_type(shape: ET.Element, element: dict[str, Any]) -> bool:
+    expected_type = element["type"]
     if expected_type == "image":
         return shape.tag == f"{{{NS['p']}}}pic"
     if expected_type == "text":
@@ -74,8 +75,12 @@ def _matches_native_type(shape: ET.Element, expected_type: str) -> bool:
     if expected_type == "line":
         if shape.tag == f"{{{NS['p']}}}cxnSp":
             return True
+        expected_geometry = element.get("geometry", "straight")
+        if expected_geometry == "curve":
+            return shape.tag == f"{{{NS['p']}}}sp" and shape.find(".//a:custGeom", NS) is not None
         geometry = shape.find(".//a:prstGeom", NS)
-        return shape.tag == f"{{{NS['p']}}}sp" and geometry is not None and geometry.attrib.get("prst") == "line"
+        accepted_geometry = "arc" if expected_geometry == "arc" else "line"
+        return shape.tag == f"{{{NS['p']}}}sp" and geometry is not None and geometry.attrib.get("prst") == accepted_geometry
     if expected_type == "shape":
         if shape.tag != f"{{{NS['p']}}}sp":
             return False
@@ -284,7 +289,7 @@ def verify_ppt(args: argparse.Namespace) -> dict[str, Any]:
     editable_text_count = 0
     for element in layout["elements"]:
         shapes = [shape for name, shape in inspection["objects"].items() if _base_id(name) == element["id"]]
-        matching = bool(shapes) and all(_matches_native_type(shape, element["type"]) for shape in shapes)
+        matching = bool(shapes) and all(_matches_native_type(shape, element) for shape in shapes)
         if element.get("editable", False) and not matching:
             native_missing += 1
         if element in required_text and matching:

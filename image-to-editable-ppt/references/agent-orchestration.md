@@ -27,11 +27,18 @@ python scripts/run_pipeline.py \
   --request work/topic/request.json \
   --iteration-dir work/topic/iterations/01 \
   --output-ppt work/topic/iterations/01/topic_editable.pptx \
+  --execution-mode production \
+  --run-state work/topic/run_state.json \
   --renderer auto \
   --node /path/to/node \
   --run-id task-001 \
   --iteration 1
 ```
+
+Production mode requires state `building`, records the structural result in
+`run_state.json`, and always returns `deliverable: false`. Diagnostic mode is
+available for isolated engineering checks, does not mutate run state, and can
+never be used as delivery evidence.
 
 During P2, invoke the asset chain with explicit iteration-scoped paths:
 
@@ -144,7 +151,29 @@ python scripts/finalize_agent_response.py \
   --run-id task-001 --iteration 1
 ```
 
-Prepare the Reviewer only after structural QA passes. Finalize it with the current Planner call record and write only `iterations/<NN>/review_report.json`. Use Planner `revision` mode to finalize only `review_patch.json`; do not apply it in the P5 call layer.
+Prepare the Reviewer only after structural QA passes. In a production run,
+open the mandatory checkpoint with:
+
+```bash
+python scripts/run_review_checkpoint.py \
+  --work-root work/topic \
+  --iteration-dir work/topic/iterations/01 \
+  --run-state work/topic/run_state.json \
+  --planner-call-record work/topic/.agent-calls/01/planner/planner-001/call_record.json \
+  --call-id reviewer-001 \
+  --model-selection-mode runtime-default \
+  --run-id task-001 --iteration 1 \
+  --log-file work/topic/iterations/01/pipeline.log
+```
+
+This command creates the exact Reviewer allowlist package and advances state
+from `structural_pass` to `reviewing`. It does not claim that the Reviewer has
+run. Execute that package in a new context, then finalize it with the current
+Planner call record and write only `iterations/<NN>/review_report.json`. The
+finalizer rejects identical Planner and Reviewer context IDs.
+
+Use Planner `revision` mode to finalize only `review_patch.json`; do not apply
+it in the P5 call layer.
 
 Evaluate a finalized review with:
 
@@ -159,6 +188,26 @@ python scripts/evaluate_review.py \
 ```
 
 The evaluator uses canonical JSON, decimal `ROUND_HALF_UP`, structural editability, scoring caps, recoverability, and request thresholds. A normal policy result, including `revise`, `fail`, or `warning_candidate`, returns exit code 0; state transitions belong to the Orchestrator.
+
+After advancing state with `review_ready` and `evaluation_result`, assert the
+normal-pass review gate before creating a delivery decision:
+
+```bash
+python scripts/assert_review_gate.py \
+  --work-root work/topic \
+  --iteration-dir work/topic/iterations/01 \
+  --run-state work/topic/run_state.json \
+  --planner-call-record work/topic/.agent-calls/01/planner/planner-001/call_record.json \
+  --reviewer-call-record work/topic/.agent-calls/01/reviewer/reviewer-001/call_record.json \
+  --ppt work/topic/iterations/01/topic_editable.pptx \
+  --run-id task-001 --iteration 1 \
+  --log-file work/topic/iterations/01/pipeline.log
+```
+
+The assertion requires structural pass, deterministic policy pass, no failed
+mandatory visual checks, fresh and distinct Planner/Reviewer contexts, and a
+complete current hash chain. Missing review artifacts return delivery-gate
+exit code 10.
 
 After evaluation, follow [iteration-and-delivery.md](iteration-and-delivery.md). It freezes the event-driven state interface, seven Patch operations, warning-response evidence, deterministic delivery decision, and exact seven-file packaging gate. Never advance state by editing `run_state.json` directly in a production run.
 

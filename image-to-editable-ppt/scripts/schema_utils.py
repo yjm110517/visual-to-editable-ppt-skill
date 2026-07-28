@@ -125,6 +125,7 @@ def _region_ok(region: dict[str, Any]) -> bool:
 
 def _validate_review_issues(document: dict[str, Any], failures: list[dict[str, str]]) -> None:
     _unique(document["issues"], "id", "$.issues", failures)
+    issues_by_id = {item["id"]: item for item in document["issues"]}
     for index, item in enumerate(document["issues"]):
         base = f"$.issues[{index}]"
         if item["severity"] != "suggestion" and not (item["element_ids"] or item["asset_ids"] or "source_region" in item or "render_region" in item):
@@ -132,6 +133,25 @@ def _validate_review_issues(document: dict[str, Any], failures: list[dict[str, s
         for field in ("source_region", "render_region"):
             if field in item and not _region_ok(item[field]):
                 failures.append(error(base + f".{field}", "normalized region exceeds page bounds"))
+    for check_name, check in document["mandatory_visual_checks"].items():
+        base = f"$.mandatory_visual_checks.{check_name}"
+        if check["status"] == "fail":
+            if not check["issue_ids"]:
+                failures.append(error(base + ".issue_ids", "a failed mandatory visual check must reference at least one issue"))
+            for issue_id in check["issue_ids"]:
+                issue = issues_by_id.get(issue_id)
+                if issue is None:
+                    failures.append(error(base + ".issue_ids", f"unknown issue id: {issue_id}"))
+                elif issue["severity"] == "suggestion":
+                    failures.append(error(base + ".issue_ids", "a failed mandatory visual check cannot reference only a suggestion"))
+        elif check["issue_ids"]:
+            failures.append(error(base + ".issue_ids", "pass and not_applicable checks cannot reference issues"))
+    failed_checks = [
+        name for name, check in document["mandatory_visual_checks"].items()
+        if check["status"] == "fail"
+    ]
+    if document["reviewer_recommendation"] == "pass" and failed_checks:
+        failures.append(error("$.reviewer_recommendation", "pass is forbidden while a mandatory visual check fails"))
 
 
 def validate_semantics(kind: str, document: dict[str, Any]) -> None:
@@ -354,6 +374,8 @@ def validate_semantics(kind: str, document: dict[str, Any]) -> None:
         dimensions = [item["dimension"] for item in document["score_adjustments"]]
         if len(dimensions) != len(set(dimensions)):
             failures.append(error("$.score_adjustments", "score adjustment dimensions must be unique"))
+        if document["policy_decision"] == "pass" and document["failed_visual_checks"]:
+            failures.append(error("$.policy_decision", "pass is forbidden while a mandatory visual check fails"))
     elif kind == "delivery_decision":
         status = document["status"]
         if not _is_utc_timestamp(document["timestamp_utc"]):

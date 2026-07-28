@@ -325,6 +325,13 @@ def _finalize_review(args: argparse.Namespace, work_root: Path, call_manifest: d
     planner_record = _load_planner_record(args.planner_call_record, work_root, args.schema_dir)
     if planner_record["task_id"] != call_manifest["task_id"]:
         raise AssetError("Planner provenance belongs to another task", path=str(args.planner_call_record), code="call_record")
+    if planner_record["context_id"] == reviewer_record["context_id"]:
+        raise AssetError(
+            "Planner and Reviewer must use different fresh contexts",
+            path=str(args.planner_call_record),
+            code="context_conflict",
+            exit_code=9,
+        )
 
     ordered_issues = []
     for issue in sorted(response["issues"], key=lambda item: item["id"]):
@@ -335,7 +342,9 @@ def _finalize_review(args: argparse.Namespace, work_root: Path, call_manifest: d
     report = {
         "schema_version": "1.3", "task_id": response["task_id"], "iteration": response["iteration"],
         "reviewer_recommendation": response["reviewer_recommendation"], "scores": response["scores"],
-        "issues": ordered_issues, "approved_elements": sorted(response["approved_elements"]), "warnings": sorted(response["warnings"]),
+        "issues": ordered_issues,
+        "mandatory_visual_checks": response["mandatory_visual_checks"],
+        "approved_elements": sorted(response["approved_elements"]), "warnings": sorted(response["warnings"]),
         "review_context": {
             "source_sha256": input_hashes["source.png"], "render_sha256": input_hashes["rendered_slide.png"],
             "layout_sha256": input_hashes["layout.json"], "qa_report_sha256": input_hashes["qa_report.json"],

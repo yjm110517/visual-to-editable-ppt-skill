@@ -137,7 +137,26 @@ function buildShape(pptx, slide, layout, element) {
 }
 
 function buildLine(pptx, slide, element) {
-  slide.addShape(pptx.ShapeType.line, { ...basePosition(element, `ivt:${element.id}`), fill: { color: "FFFFFF", transparency: 100 }, line: lineOptions(element.line) });
+  const geometry = element.geometry ?? "straight";
+  if (geometry === "curve") {
+    const { start, control1, control2, end } = element.curve;
+    const points = [start, control1, control2, end];
+    if (points.some((point) => point.x > element.w || point.y > element.h)) {
+      throw new BuildError("curve point exceeds the element bounding box", { category: "invalid_curve", target: element.id });
+    }
+    slide.addShape(pptx.ShapeType.custGeom, {
+      ...basePosition(element, `ivt:${element.id}`),
+      fill: { color: "FFFFFF", transparency: 100 },
+      line: lineOptions(element.line),
+      points: [
+        { x: start.x, y: start.y, moveTo: true },
+        { x: end.x, y: end.y, curve: { type: "cubic", x1: control1.x, y1: control1.y, x2: control2.x, y2: control2.y } },
+      ],
+    });
+    return;
+  }
+  const shapeType = geometry === "arc" ? pptx.ShapeType.arc : pptx.ShapeType.line;
+  slide.addShape(shapeType, { ...basePosition(element, `ivt:${element.id}`), fill: { color: "FFFFFF", transparency: 100 }, line: lineOptions(element.line) });
 }
 
 export async function verifyResolvedAsset(asset) {
@@ -158,7 +177,7 @@ async function buildImage(slide, element, assets, usedAssets) {
   await verifyResolvedAsset(asset);
   // PptxGenJS falls back to the absolute source path when altText is empty,
   // which makes otherwise identical builds depend on the staging directory.
-  const options = { ...basePosition(element, `ivt:${element.id}`), path: asset.path, altText: element.alt_text ?? element.asset_id };
+  const options = { ...basePosition(element, `ivt:${element.id}`), path: asset.path, altText: element.alt_text ?? element.asset_id, rounding: element.rounding ?? false };
   if (element.fit !== "stretch") options.sizing = { type: element.fit, w: element.w, h: element.h };
   slide.addImage(options);
   usedAssets.set(asset.id, { asset_id: asset.id, type: asset.type, sha256: asset.sha256 });

@@ -52,6 +52,12 @@ def _verify_chain(work_root: Path, iteration: Path, ppt: Path, state: dict[str, 
     accepted = decision["accepted_iteration"]
     if qa["status"] != "pass" or qa["iteration"] != accepted or review["iteration"] != accepted or evaluation["iteration"] != accepted:
         raise AssetError("accepted reports must be structural pass and share one iteration", code="delivery_gate", exit_code=10)
+    if any(check["status"] == "fail" for check in review["mandatory_visual_checks"].values()) or evaluation["failed_visual_checks"]:
+        raise AssetError("delivery is forbidden while a mandatory visual check fails", code="delivery_gate", exit_code=10)
+    planner_context = review["agent_provenance"]["planner"]["context_id"]
+    reviewer_context = review["agent_provenance"]["reviewer"]["context_id"]
+    if planner_context == reviewer_context:
+        raise AssetError("Planner and Reviewer must use independent contexts", code="context_conflict", exit_code=9)
     expected_status = "pass" if evaluation["policy_decision"] == "pass" else "pass_with_warnings" if evaluation["policy_decision"] == "warning_candidate" else None
     if decision["status"] != expected_status:
         raise AssetError("delivery status conflicts with review policy", code="delivery_gate", exit_code=10)

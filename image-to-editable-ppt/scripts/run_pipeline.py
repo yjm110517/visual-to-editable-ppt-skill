@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from asset_common import AssetError, atomic_write_json, failure, load_contract, log_event, success
+from manage_run_state import advance as advance_run_state
 
 
 COMPONENT = "run_pipeline"
@@ -22,6 +23,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--request", required=True, type=Path)
     result.add_argument("--iteration-dir", required=True, type=Path)
     result.add_argument("--output-ppt", required=True, type=Path)
+    result.add_argument("--execution-mode", choices=("production", "diagnostic"), default="diagnostic")
+    result.add_argument("--run-state", type=Path)
     result.add_argument("--renderer", choices=("auto", "powerpoint", "libreoffice"), default="auto")
     result.add_argument("--node", type=Path)
     result.add_argument("--libreoffice-path", type=Path)
@@ -35,11 +38,63 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+def _validate_execution_state(args: argparse.Namespace) -> dict[str, Any] | None:
+    if args.execution_mode == "diagnostic":
+        if args.run_state is not None:
+            raise AssetError(
+                "diagnostic mode must not mutate run state",
+                path="--run-state",
+                code="cli_error",
+                exit_code=2,
+            )
+        return None
+    if args.run_state is None:
+        raise AssetError(
+            "production mode requires --run-state",
+            path="--run-state",
+            code="cli_error",
+            exit_code=2,
+        )
+    work_root = args.request.resolve().parent
+    expected = work_root / "run_state.json"
+    if args.run_state.resolve() != expected:
+        raise AssetError("run-state must be work-root/run_state.json", path=str(args.run_state), code="path_escape")
+    state = load_contract("run_state", expected, args.schema_dir)
+    request = load_contract("request", args.request, args.schema_dir)
+    if state["task_id"] != request["task_id"] or state["current_iteration"] != args.iteration:
+        raise AssetError("run state does not match the production iteration", path=str(expected), code="state_conflict", exit_code=9)
+    if state["state"] != "building":
+        raise AssetError("production pipeline requires run state building", path=str(expected), code="state_conflict", exit_code=9)
+    return state
+
+
+def _record_structural_result(args: argparse.Namespace, qa_report: Path) -> dict[str, Any] | None:
+    if args.execution_mode != "production":
+        return None
+    state_args = argparse.Namespace(
+        work_root=args.request.resolve().parent,
+        state=args.run_state.resolve(),
+        event="structural_result",
+        artifact=qa_report,
+        reason=None,
+        schema_dir=args.schema_dir,
+        run_id=args.run_id,
+        log_file=args.log_file,
+    )
+    return advance_run_state(state_args)
+
+
 def _parse_result(completed: subprocess.CompletedProcess[str], component: str) -> dict[str, Any]:
     try:
         payload = json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
-        raise AssetError(f"{component} returned invalid result JSON", code="invalid_subprocess_result", exit_code=70) from exc
+        diagnostic = (completed.stderr or completed.stdout or "").strip().replace("\r", " ").replace("\n", " ")
+        if len(diagnostic) > 500:
+            diagnostic = diagnostic[:497] + "..."
+        message = f"{component} returned invalid result JSON"
+        if diagnostic:
+            message += f": {diagnostic}"
+        raise AssetError(message, code="invalid_subprocess_result", exit_code=70) from exc
     if not isinstance(payload, dict) or payload.get("component") != component or payload.get("status") not in {"ok", "error"}:
         raise AssetError(f"{component} returned a result that violates the CLI contract", code="invalid_subprocess_result", exit_code=70)
     return payload
@@ -167,6 +222,7 @@ def _preserve_failure_log(stage: Path | None, target: Path, args: argparse.Names
 def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
     if args.iteration < 1:
         raise AssetError("iteration must be positive", path="--iteration", code="cli_error", exit_code=2)
+    _validate_execution_state(args)
     node = _node_executable(args)
     actual_iteration = args.iteration_dir.resolve()
     if args.log_file and args.log_file.resolve() != actual_iteration / "pipeline.log":
@@ -259,6 +315,8 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             _commit_iteration(stage_iteration, actual_iteration, args.output_ppt.name)
             actual_qa = actual_iteration / "qa_report.json"
             qa_doc = json.loads(actual_qa.read_text(encoding="utf-8"))
+            state = _record_structural_result(args, actual_qa)
+            structural_pass = verify_code == 0
             return {
                 "exit_code": verify_code,
                 "outputs": {
@@ -271,6 +329,18 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
                     "pipeline_log": str((actual_iteration / "pipeline.log").resolve()),
                     "ppt_sha256": qa_doc["provenance"]["ppt_sha256"],
                     "render_sha256": qa_doc["provenance"]["render_sha256"],
+                    "execution_mode": args.execution_mode,
+                    "structural_status": qa_doc["status"],
+                    "visual_review_status": "pending" if structural_pass else "blocked",
+                    "deliverable": False,
+                    "required_next_action": (
+                        "run_review_checkpoint"
+                        if structural_pass and args.execution_mode == "production"
+                        else "diagnostic_only_not_deliverable"
+                        if structural_pass
+                        else "repair_structural_failure"
+                    ),
+                    "run_state": state["state"] if state is not None else "not_managed",
                 },
             }
         except Exception as exc:

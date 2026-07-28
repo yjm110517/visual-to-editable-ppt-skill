@@ -67,7 +67,12 @@ def _issue_counts(issues: list[dict[str, Any]]) -> dict[str, int]:
     return result
 
 
-def _policy(request: dict[str, Any], review: dict[str, Any], scores: dict[str, int]) -> tuple[str, list[str]]:
+def _policy(
+    request: dict[str, Any],
+    review: dict[str, Any],
+    scores: dict[str, int],
+    failed_visual_checks: list[str],
+) -> tuple[str, list[str]]:
     issues = review["issues"]
     current = review["iteration"]
     remaining = current < request["review_policy"]["max_iterations"]
@@ -78,6 +83,12 @@ def _policy(request: dict[str, Any], review: dict[str, Any], scores: dict[str, i
         return ("revise", ["unknown_critical_or_major_issue"]) if remaining else ("fail", ["unknown_issue_at_iteration_limit"])
     if critical_or_major:
         return ("revise", ["recoverable_critical_or_major_issue"]) if remaining else ("fail", ["critical_or_major_issue_at_iteration_limit"])
+    if failed_visual_checks:
+        return (
+            ("revise", ["mandatory_visual_check_failed"])
+            if remaining
+            else ("fail", ["mandatory_visual_check_failed_at_iteration_limit"])
+        )
     policy = request["review_policy"]
     content_ok = scores["content_accuracy"] >= policy["min_content_accuracy"]
     editability_ok = scores["editability"] >= policy["required_editability_score"]
@@ -137,12 +148,18 @@ def evaluate(request: dict[str, Any], qa: dict[str, Any], review: dict[str, Any]
     scores["editability"] = _editability(qa)
     weighted = sum(Decimal(scores[key]) * weight for key, weight in WEIGHTS.items())
     scores["overall_score"] = int(weighted.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-    decision, reasons = _policy(request, review, scores)
+    failed_visual_checks = sorted(
+        name
+        for name, check in review["mandatory_visual_checks"].items()
+        if check["status"] == "fail"
+    )
+    decision, reasons = _policy(request, review, scores, failed_visual_checks)
     relation, relation_reason = _relation(review["reviewer_recommendation"], decision)
     return {
         "schema_version": "1.3", "task_id": review["task_id"], "iteration": review["iteration"],
         "reviewer_recommendation": review["reviewer_recommendation"], "computed_scores": scores,
-        "issue_counts": _issue_counts(review["issues"]), "anchor_consistent": not adjustments,
+        "issue_counts": _issue_counts(review["issues"]), "failed_visual_checks": failed_visual_checks,
+        "anchor_consistent": not adjustments,
         "score_adjustments": adjustments, "policy_decision": decision,
         "recommendation_relation": relation, "recommendation_relation_reason": relation_reason,
         "decision_reasons": reasons,

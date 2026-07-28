@@ -87,6 +87,26 @@
         "properties": {"color": {"pattern": "^#[0-9A-Fa-f]{8}$"}}
       }
     },
+    "curvePoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": {"type": "number", "minimum": 0},
+        "y": {"type": "number", "minimum": 0}
+      }
+    },
+    "cubicCurve": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "control1", "control2", "end"],
+      "properties": {
+        "start": {"$ref": "#/$defs/curvePoint"},
+        "control1": {"$ref": "#/$defs/curvePoint"},
+        "control2": {"$ref": "#/$defs/curvePoint"},
+        "end": {"$ref": "#/$defs/curvePoint"}
+      }
+    },
     "shadow": {
       "type": "object",
       "additionalProperties": false,
@@ -266,10 +286,22 @@
           "properties": {
             "type": {"const": "line"},
             "editable": {"const": true},
+            "geometry": {"enum": ["straight", "arc", "curve"]},
+            "curve": {"$ref": "#/$defs/cubicCurve"},
             "line": {"$ref": "#/$defs/lineStyle"},
             "from_id": {"type": "string", "minLength": 1},
             "to_id": {"type": "string", "minLength": 1}
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": ["geometry"],
+                "properties": {"geometry": {"const": "curve"}}
+              },
+              "then": {"required": ["curve"]},
+              "else": {"not": {"required": ["curve"]}}
+            }
+          ]
         }
       ],
       "unevaluatedProperties": false
@@ -286,6 +318,7 @@
             "asset_id": {"type": "string", "minLength": 1},
             "fit": {"enum": ["contain", "cover", "stretch"]},
             "preserve_aspect_ratio": {"type": "boolean"},
+            "rounding": {"type": "boolean"},
             "contains_text": {"type": "boolean"},
             "text_editability_exempt": {"type": "boolean"},
             "exemption_reason": {"type": "string", "minLength": 1},

@@ -178,4 +178,6 @@ def provenance_entry(record: dict[str, Any]) -> dict[str, Any]:
         "top_p": record["parameters"]["top_p"],
         "seed": record["parameters"]["seed"],
         "call_id": record["call_id"],
+        "context_id": record["context_id"],
+        "parent_context_id": record["parent_context_id"],
     }

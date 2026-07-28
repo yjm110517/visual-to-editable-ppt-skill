@@ -77,6 +77,11 @@ A rejection advances to `failed` and can never be packaged.
 - accepted final warning candidate → `pass_with_warnings`
 - structural/policy failure or explicit rejection → `fail`
 
+For a normal pass, run `assert_review_gate.py` before creating the delivery
+decision. Packaging independently rechecks that mandatory visual checks are
+clear and that Planner/Reviewer context IDs differ; a caller cannot bypass the
+Reviewer by invoking packaging scripts directly.
+
 `package_output.py` accepts only a `packaging` state and a matching successful
 decision. It revalidates the request, QA, Review, Evaluation, PPTX, preview,
 layout, crops, asset manifest, assets, approval evidence, and their hash chain.

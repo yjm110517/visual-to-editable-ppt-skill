@@ -4,7 +4,7 @@
   "title": "Visual Reviewer Raw Response",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "task_id", "iteration", "reviewer_recommendation", "scores", "issues", "approved_elements", "warnings"],
+  "required": ["schema_version", "task_id", "iteration", "reviewer_recommendation", "scores", "issues", "mandatory_visual_checks", "approved_elements", "warnings"],
   "properties": {
     "schema_version": {"const": "1.3"},
     "task_id": {"type": "string", "minLength": 1},
@@ -12,10 +12,47 @@
     "reviewer_recommendation": {"enum": ["pass", "revise", "fail"]},
     "scores": {"$ref": "#/$defs/scores"},
     "issues": {"type": "array", "items": {"$ref": "#/$defs/issue"}},
+    "mandatory_visual_checks": {"$ref": "#/$defs/mandatory_visual_checks"},
     "approved_elements": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
     "warnings": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
   },
   "$defs": {
+    "visual_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "rationale", "issue_ids"],
+      "properties": {
+        "status": {"enum": ["pass", "fail", "not_applicable"]},
+        "rationale": {"type": "string", "minLength": 1},
+        "issue_ids": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        }
+      }
+    },
+    "mandatory_visual_checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "connector_topology",
+        "connector_endpoints",
+        "key_proportions",
+        "crop_boundaries",
+        "background_seams",
+        "visual_depth",
+        "typography_hierarchy"
+      ],
+      "properties": {
+        "connector_topology": {"$ref": "#/$defs/visual_check"},
+        "connector_endpoints": {"$ref": "#/$defs/visual_check"},
+        "key_proportions": {"$ref": "#/$defs/visual_check"},
+        "crop_boundaries": {"$ref": "#/$defs/visual_check"},
+        "background_seams": {"$ref": "#/$defs/visual_check"},
+        "visual_depth": {"$ref": "#/$defs/visual_check"},
+        "typography_hierarchy": {"$ref": "#/$defs/visual_check"}
+      }
+    },
     "scores": {
       "type": "object",
       "additionalProperties": false,

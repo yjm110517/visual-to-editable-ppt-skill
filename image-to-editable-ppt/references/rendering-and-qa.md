@@ -33,6 +33,11 @@ Read this reference before rendering a generated PPTX, auditing fonts, verifying
 
 Any invalid package, page count, hash, object ID, native type, text ratio, exemption, bound, media relationship, font audit, or render count is a hard structural failure. A structural report says only `pass` or `fail`; it never substitutes for visual review.
 
+A structural pass means only `structurally reviewable`. It must be represented
+as `deliverable: false` and `visual_review_status: pending` until the
+independent Reviewer, deterministic evaluation, and final review assertion
+have passed. Do not use a diagnostic pipeline invocation as delivery evidence.
+
 ## Single-iteration transaction
 
 Run stages in this order:

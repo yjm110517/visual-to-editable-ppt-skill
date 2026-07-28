@@ -20,6 +20,13 @@ The following are not acceptable substitutes for a distinctive source icon:
 
 If a source icon is already isolated inside a text-free tile, crop the icon or tile and keep surrounding card text, borders, and connectors native. Crop the smallest region that preserves the complete effect without including unrelated readable text.
 
+Before accepting a crop, compare its boundary pixels with the intended PowerPoint surface:
+
+- If the source uses a visible tile, reproduce that tile deliberately and keep its size, corner radius, border, and fill consistent.
+- If the source has no visible tile, do not place an opaque rectangular crop whose background differs from the card. Tighten the crop, choose a source region with compatible boundary color, use a faithful sanitized SVG, or keep the source treatment as a deliberate text-free tile.
+- If the source image is clipped to a circle or ellipse, set the image `rounding` option and verify that no rectangular corner remains visible.
+- Do not use automatic background removal merely to hide a poor crop. Preserve identity first and use only a validated asset-processing path.
+
 Use this decision table:
 
 | Source visual | Required representation |
@@ -51,6 +58,38 @@ Use a raster asset for a complex photographic, textured, illustrated, rendered, 
 - Require the original and padded crop bounds to remain fully inside the source. Never silently clamp a crop.
 - Re-encode the pixels and remove EXIF, XMP, comments, and other nonessential metadata.
 - Do not use automatic background removal in P2.
+
+## Decorative background regions
+
+A local background crop is allowed only when it contains no required text and its boundaries blend into the surrounding native slide. Inspect all four edges in the rendered output.
+
+Reject a local background crop when it creates a visible rectangular seam, repeats a texture incorrectly, changes the page lighting direction, or requires stretching that distorts a recognizable pattern. In that case, prefer layered native shapes or a sanitized text-free SVG approximation. Never trade one background mismatch for a more visible crop boundary.
+
+## Relationship topology
+
+Treat arrows and connectors as semantic structure, not decoration. Inventory the source topology before building:
+
+- preserve every node, branch, merge, direction, and connection;
+- use native `geometry: arc` for editable quarter-arc connectors, `geometry: curve` for endpoint-controlled cubic curves, and `geometry: straight` for straight segments;
+- keep arrowheads at the destination end, make the arrowhead clearly visible at render size, and stop the tip close to the destination card without entering its content area;
+- keep the visual gap between a connector endpoint and its source or destination node small and consistent with the reference; a semantically correct but visibly floating arrow is not acceptable;
+- preserve a visibly closed cycle as a closed directional cycle.
+
+If the current primitives cannot preserve a complex connector faithfully, record the limitation and use a text-free sanitized SVG for the connector layer rather than silently replacing the topology with unrelated straight lines.
+
+## Observed visual failure patterns
+
+These failures were observed during an end-to-end reconstruction and must be treated as regression cases:
+
+| Symptom | Root cause | Required correction |
+|---|---|---|
+| A six-step cycle becomes disconnected horizontal or vertical segments | Connectors were classified only by endpoints and not by source topology | Inventory the full directed graph first; use editable curves and straight segments with destination arrowheads |
+| A curve has the right direction but visibly floats between cards | A preset arc bounding box was adjusted without controlling its actual endpoints | Use `geometry: curve`, place start and end near the corresponding node boundaries, and verify arrowhead visibility at final render size |
+| A circular central illustration shows rectangular corners | A rectangular PNG was placed without preserving its visible source mask | Use `rounding: true` for circular or elliptical source artwork and verify the rendered boundary |
+| An icon appears inside a new opaque rectangle not present in the source | The crop included a source surface whose boundary did not match the destination card | Tighten the crop or reproduce the source tile deliberately; reject accidental boundary rectangles |
+| A decorative crop creates a hard-edged rectangle across the slide | A local background crop was used without edge compatibility checks | Reject the crop and rebuild the layer with native shapes or a seam-free textless asset |
+| The central object, side panels, or footer changes the page hierarchy | Elements were positioned independently without comparing key proportions | Compare the main bounding boxes and negative space side by side before approval |
+| Cards are structurally correct but visually flat | Borders, shadows, highlights, and layered surfaces were omitted because structure QA passed | Preserve the minimum depth cues needed for source similarity and require visual review after structural QA |
 
 ## SVG assets
 

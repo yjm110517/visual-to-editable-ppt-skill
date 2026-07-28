@@ -6,6 +6,20 @@
 
 它不是简单地把整张图片铺到幻灯片上，而是帮助 Agent 分析页面结构、选择正确的重建方式、生成 PPTX、渲染预览，并验证文字与对象是否真的可编辑。
 
+## 效果预览
+
+[![参考图片与可编辑 PowerPoint 实际渲染结果对比](docs/assets/readme/ai-learning-loop/ai-learning-loop-comparison.webp)](docs/assets/readme/ai-learning-loop/ai-learning-loop-rendered.png)
+
+左侧是[原创参考图片](docs/assets/readme/ai-learning-loop/ai-learning-loop-source.png)，右侧是生成的[可编辑 PowerPoint 实际渲染结果](docs/assets/readme/ai-learning-loop/ai-learning-loop-rendered.png)。标题、说明、编号和结论均为原生文本，卡片、面板和闭环贝塞尔曲线为原生 PowerPoint 对象；13 个具有渐变、阴影和立体细节的图标则从原图独立裁切。整个页面没有使用整页截图，也没有把含正文的卡片栅格化。
+
+- 111 / 111 个规格元素成功构建
+- 32 / 32 个必需文本为原生文本
+- 可编辑文字比例 100%
+- 缺失对象、字体违规、媒体缺失和越界对象均为 0
+- 通过 Microsoft PowerPoint 实机渲染与结构 QA
+
+> 视觉相似不等于整页栅格化。这个示例中的文字、卡片、面板、编号和基础连接线仍可在 PowerPoint 中逐个编辑。
+
 ## 能做什么
 
 - 从 PNG、JPEG 等参考图重建单页可编辑 PPT。
@@ -35,8 +49,8 @@
 2. 说明页面比例、字体偏好或“按原图处理”。
 3. Agent 分析页面并生成布局、裁切和资产规格。
 4. 流水线构建 PPTX、渲染预览并执行结构 QA。
-5. 如有明显偏差，Planner 根据独立 Reviewer 的问题清单修订下一轮。
-6. 通过门禁后交付可编辑 PPT、预览图和 QA 报告。
+5. 独立 Reviewer 必须逐项检查连接关系、箭头端点、比例、裁图边界、背景接缝、视觉层次和字体层级。
+6. 如有明显偏差，Planner 根据问题清单修订下一轮；结构 QA 与视觉审核都通过后才交付。
 
 默认排版交互模式为 `ask`：缺失时一次性询问标题字体、标题字号、正文字体和正文字号。如果你说“直接做”“按原图”或“不要问”，则按原图推断。
 
@@ -56,27 +70,51 @@ visual-to-editable-ppt-skill/
    └─ scripts/                 # 资产、PPT、渲染、QA 与交付脚本
 ```
 
-公开仓库只包含安装和运行 Skill 所需的内容。工程测试、真实测试图片、资格评估、历史规格和发布审计工具保存在独立的私有验证仓库，不会随 Skill 安装。
+公开仓库除 README 演示素材外，只包含安装和运行 Skill 所需的内容。工程测试、资格评估、历史规格和发布审计工具保存在独立的私有验证仓库，不会随 Skill 安装。
 
 ## 工作原理
 
-```text
-参考图片与用户要求
-        ↓
-Layout Planner
-        ↓
-layout.json + crops.json + asset_manifest.json
-        ↓
-资产裁切 / SVG 清洗 / PPT 构建
-        ↓
-字体审计 / PowerPoint 渲染 / 结构 QA
-        ↓
-独立 Visual Reviewer
-        ↓
-修订（最多三轮）或安全交付
+```mermaid
+flowchart LR
+    A["① 上传参考图<br/>填写转换要求"]
+    B["② Planner 分析<br/>生成布局与资产规格"]
+    C["③ 确定性流水线<br/>处理资产 · 构建 PPT"]
+    D["④ 实机渲染<br/>结构 QA"]
+    E["⑤ 独立 Reviewer<br/>视觉对比审核"]
+    F["⑥ 确定性评估<br/>Pass / Revise / Fail"]
+    G["⑦ 交付门禁<br/>校验状态与哈希"]
+    H["可编辑 PPT<br/>及审核报告"]
+
+    A --> B --> C --> D
+    D -->|"结构通过"| E
+    E --> F
+    F -->|"通过"| G --> H
+
+    D -.->|"结构失败"| R["生成修订意见"]
+    F -.->|"需要修订"| R
+    R -.->|"创建下一轮<br/>最多 3 轮"| B
+
+    D -->|"不可恢复"| X["终止并保留诊断"]
+    F -->|"审核失败"| X
+
+    classDef input fill:#EAF3FF,stroke:#2474E5,color:#123B70;
+    classDef agent fill:#F0EBFF,stroke:#7657D6,color:#35236B;
+    classDef process fill:#EAFBF5,stroke:#21A675,color:#145640;
+    classDef review fill:#FFF4DD,stroke:#F0A020,color:#714600;
+    classDef delivery fill:#E9F8FF,stroke:#1687B8,color:#0B4C68;
+    classDef failure fill:#FFF0F0,stroke:#D84A4A,color:#741F1F;
+
+    class A input;
+    class B,E agent;
+    class C,D process;
+    class F,R review;
+    class G,H delivery;
+    class X failure;
 ```
 
 确定性脚本负责路径、Schema、哈希、资产安全、PPT 构建、渲染和结构 QA；多模态 Agent 负责理解参考图、规划版式和视觉审核。这样的职责分离让结果既能接近原图，也能被机器检查。
+
+独立 Reviewer 会重点检查内容准确性、关键比例、连接拓扑、箭头端点、字体层级、裁图边界、背景接缝和视觉层次。结构 QA 通过只代表页面可以进入视觉审核，不代表已经可以交付。
 
 ## 什么时候裁图，什么时候重画
 
