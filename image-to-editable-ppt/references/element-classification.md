@@ -20,12 +20,44 @@ The following are not acceptable substitutes for a distinctive source icon:
 
 If a source icon is already isolated inside a text-free tile, crop the icon or tile and keep surrounding card text, borders, and connectors native. Crop the smallest region that preserves the complete effect without including unrelated readable text.
 
+For a numbered process step, always inventory and emit separate elements for:
+
+- the native badge ellipse or circle;
+- the native number text;
+- the isolated complex icon crop;
+- the native card, border, heading, body text, and connectors.
+
+Neither a complete number badge nor any fragment of it may enter the icon crop.
+The same prohibition applies to neighboring labels, body text, and card borders.
+
 Before accepting a crop, compare its boundary pixels with the intended PowerPoint surface:
 
 - If the source uses a visible tile, reproduce that tile deliberately and keep its size, corner radius, border, and fill consistent.
 - If the source has no visible tile, do not place an opaque rectangular crop whose background differs from the card. Tighten the crop, choose a source region with compatible boundary color, use a faithful sanitized SVG, or keep the source treatment as a deliberate text-free tile.
 - If the source image is clipped to a circle or ellipse, set the image `rounding` option and verify that no rectangular corner remains visible.
 - Do not use automatic background removal merely to hide a poor crop. Preserve identity first and use only a validated asset-processing path.
+
+Every cropped asset has one persistent boundary policy:
+
+- `transparent`: PNG/RGBA, deterministic edge-connected background removal,
+  and a verified transparent safety margin;
+- `source_tile`: preserve a complete, deliberate, text-free source tile exactly
+  as it exists in the reference; never use this label for a clipped card edge;
+- `shape_mask`: preserve the full crop and require `rounding: true` on every
+  referring image element.
+
+The policy is declared by the Planner and persisted in `asset_manifest.json`.
+`asset_processing_report.json` records what the deterministic processor actually
+did. Alpha and edge checks do not prove semantic purity; the Reviewer must still
+look for complete or partial neighboring numbers, labels, text, or borders.
+
+If an unrelated adjacent component, such as a badge or a card-edge strip,
+overlaps the icon's rectangular bounding box but not the icon pixels, a crop
+may declare an explicit absolute-source `semantic_exclusion_boxes_px`
+rectangle. Keep it as small as possible, require it to remain inside the
+unpadded crop, and record it in the processing report. The Reviewer must
+confirm that the exclusion removed only the unrelated component and did not
+erase a shadow, highlight, or any intended icon detail.
 
 Use this decision table:
 
@@ -87,6 +119,7 @@ These failures were observed during an end-to-end reconstruction and must be tre
 | A curve has the right direction but visibly floats between cards | A preset arc bounding box was adjusted without controlling its actual endpoints | Use `geometry: curve`, place start and end near the corresponding node boundaries, and verify arrowhead visibility at final render size |
 | A circular central illustration shows rectangular corners | A rectangular PNG was placed without preserving its visible source mask | Use `rounding: true` for circular or elliptical source artwork and verify the rendered boundary |
 | An icon appears inside a new opaque rectangle not present in the source | The crop included a source surface whose boundary did not match the destination card | Tighten the crop or reproduce the source tile deliberately; reject accidental boundary rectangles |
+| A native sequence number is duplicated by a clipped number fragment inside the icon | The badge and complex icon were not decomposed before cropping | Re-crop the icon without the badge; keep the number as a native ellipse and text; report the contamination as at least `major/asset_quality` |
 | A decorative crop creates a hard-edged rectangle across the slide | A local background crop was used without edge compatibility checks | Reject the crop and rebuild the layer with native shapes or a seam-free textless asset |
 | The central object, side panels, or footer changes the page hierarchy | Elements were positioned independently without comparing key proportions | Compare the main bounding boxes and negative space side by side before approval |
 | Cards are structurally correct but visually flat | Borders, shadows, highlights, and layered surfaces were omitted because structure QA passed | Preserve the minimum depth cues needed for source similarity and require visual review after structural QA |

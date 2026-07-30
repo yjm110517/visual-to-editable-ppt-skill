@@ -98,6 +98,7 @@ def open_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
         "--layout", str(iteration / "layout.json"),
         "--qa-report", str(iteration / "qa_report.json"),
         "--asset-manifest", str(iteration / "asset_manifest.json"),
+        "--asset-processing-report", str(iteration / "asset_processing_report.json"),
         "--iteration", str(args.iteration),
         "--model-selection-mode", args.model_selection_mode,
         "--call-id", args.call_id,

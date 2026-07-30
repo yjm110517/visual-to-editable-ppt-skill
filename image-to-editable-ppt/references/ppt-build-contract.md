@@ -33,6 +33,10 @@ The SVG report is required only when the manifest contains SVG. Python selection
 - Resolve images only through the validated asset index returned by `validate_assets.py --emit-resolved-assets`. Recheck asset hashes immediately before embedding.
 - Set `rounding: true` only when the source image is visibly clipped to a circular or elliptical mask. Use it to prevent rectangular crop corners from leaking outside a circular composition; do not apply it to arbitrary icons.
 - Treat `from_id` and `to_id` as QA metadata, not dynamic connector attachment.
+- Use `relationship_groups` to declare ordered semantic structures such as a
+  `closed_cycle`. Preflight validation must prove the connector IDs form the
+  stated node-to-node sequence, have visible destination arrowheads, stay close
+  to node boundaries, and avoid the inner text-safe region.
 - Use `geometry: straight` for ordinary line segments, `geometry: arc` for native editable quarter-arcs, and `geometry: curve` with explicit start, end, and cubic control points when the connector must meet specific node boundaries. Curve coordinates are relative to the element bounding box and must remain inside it. Preserve the source flow direction with arrowheads at the destination; do not flatten a curved cycle into disconnected straight segments.
 - Reject groups, tables, charts, freeform paths, gradients, and complex effects rather than silently rasterizing them.
 

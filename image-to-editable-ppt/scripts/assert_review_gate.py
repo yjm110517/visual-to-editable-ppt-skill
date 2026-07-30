@@ -53,7 +53,7 @@ def assert_gate(args: argparse.Namespace) -> dict[str, Any]:
         raise AssetError("iteration-dir does not match work-root and iteration", path=str(iteration), code="iteration_mismatch", exit_code=9)
     if args.run_state.resolve() != work_root / "run_state.json":
         raise AssetError("run-state must be work-root/run_state.json", path=str(args.run_state), code="path_escape")
-    required = ["qa_report.json", "review_report.json", "review_evaluation.json", "rendered_slide.png", "layout.json", "asset_manifest.json"]
+    required = ["qa_report.json", "review_report.json", "review_evaluation.json", "rendered_slide.png", "layout.json", "asset_manifest.json", "asset_processing_report.json"]
     missing = [name for name in required if not (iteration / name).is_file()]
     if missing:
         raise AssetError("visual review gate artifacts are missing: " + ", ".join(missing), path=str(iteration), code="delivery_gate", exit_code=10)
@@ -79,6 +79,7 @@ def assert_gate(args: argparse.Namespace) -> dict[str, Any]:
         "layout_sha256": sha256_file(iteration / "layout.json"),
         "crops_sha256": sha256_file(iteration / "crops.json"),
         "asset_manifest_sha256": sha256_file(iteration / "asset_manifest.json"),
+        "asset_processing_report_sha256": sha256_file(iteration / "asset_processing_report.json"),
         "build_summary_sha256": sha256_file(iteration / "build_summary.json"),
         "ppt_sha256": sha256_file(ppt),
         "render_sha256": sha256_file(iteration / "rendered_slide.png"),
@@ -87,6 +88,17 @@ def assert_gate(args: argparse.Namespace) -> dict[str, Any]:
         raise AssetError("structural QA provenance is stale", code="hash_conflict", exit_code=9)
     if evaluation["failed_visual_checks"] or any(check["status"] == "fail" for check in review["mandatory_visual_checks"].values()):
         raise AssetError("one or more mandatory visual checks failed", code="delivery_gate", exit_code=10)
+    severe = [
+        issue["issue_id"]
+        for issue in review["issues"]
+        if issue["severity"] in {"critical", "major"}
+    ]
+    if severe:
+        raise AssetError(
+            "README/delivery review cannot contain critical or major issues: " + ", ".join(sorted(severe)),
+            code="delivery_gate",
+            exit_code=10,
+        )
     expected_inputs = {
         "request_sha256": sha256_file(request_path),
         "qa_report_sha256": sha256_file(iteration / "qa_report.json"),
@@ -100,6 +112,7 @@ def assert_gate(args: argparse.Namespace) -> dict[str, Any]:
         "layout_sha256": sha256_file(iteration / "layout.json"),
         "qa_report_sha256": expected_inputs["qa_report_sha256"],
         "asset_manifest_sha256": sha256_file(iteration / "asset_manifest.json"),
+        "asset_processing_report_sha256": sha256_file(iteration / "asset_processing_report.json"),
         "request_sha256": expected_inputs["request_sha256"],
     }
     if any(review["review_context"][key] != value for key, value in expected_context.items()):

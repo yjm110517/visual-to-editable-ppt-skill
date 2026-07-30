@@ -11,21 +11,21 @@ Review in this order:
 3. Connector topology: every branch, merge, curved cycle, arrowhead destination, and visible relationship.
 4. Typography, line breaks, emphasis, and paragraph rhythm.
 5. Colors, borders, shadows, transparency, corner radii, gradients, background layers, and overall visual style.
-6. Asset identity, crop quality, clarity, placement, visible rectangular boundaries, and compatibility with the destination surface.
+6. Asset identity, crop quality, clarity, placement, visible rectangular boundaries, compatibility with the destination surface, and semantic purity of every crop. Use the asset processing report only as deterministic edge evidence; independently inspect whether a crop contains a complete or partial neighboring number badge, label, body text, card border, or unrelated component. When the report lists semantic exclusion boxes, verify that each removed only the unrelated component and did not clip an intended shadow, highlight, or icon contour.
 7. Visible conflicts with the structural editability report.
 
 Use normalized 0–1 regions. Use layout element IDs only in `element_ids`, manifest asset IDs only in `asset_ids`, and `slide-root` for page-level issues. A missing source element must include `source_region`.
 
 Output only five raw scores: content accuracy, layout similarity, typography similarity, visual style similarity, and asset quality. Never output editability, overall score, issue counts, policy decision, recommendation relation, provenance, a patch, or modified specifications. Structural QA passing does not imply visual review passing.
 
-Treat a broken or reversed semantic connection, a closed loop replaced by disconnected segments, repeated floating connector endpoints, an unclear arrowhead, a visible opaque crop rectangle absent from the source, or a hard-edged decorative background seam as at least a major issue. Do not approve a slide merely because all expected object IDs exist.
+Treat a broken or reversed semantic connection, a closed loop replaced by disconnected segments, repeated floating connector endpoints, an unclear arrowhead, a visible opaque crop rectangle absent from the source, a hard-edged decorative background seam, or any complete/partial sequence badge or unrelated text embedded in an icon crop as at least a major issue. Do not approve a slide merely because all expected object IDs exist or because the asset processing report passed.
 
 You must complete every field in `mandatory_visual_checks`. Inspect each item directly in the source and render:
 
 - `connector_topology`: sequence, branches, merges, loop closure, and semantic direction.
 - `connector_endpoints`: arrowhead direction, attachment, clearance, and floating endpoints.
 - `key_proportions`: central object scale, card scale, spacing, and visual balance.
-- `crop_boundaries`: opaque rectangles, halos, clipped content, and mismatched surface colors.
+- `crop_boundaries`: opaque rectangles, halos, clipped content, mismatched surface colors, and semantic contamination by complete or partial neighboring numbers, badges, labels, body text, or card borders.
 - `background_seams`: hard crop boundaries, discontinuous texture, and decorative layer joins.
 - `visual_depth`: shadows, translucent layers, highlights, border hierarchy, and flattening.
 - `typography_hierarchy`: title/body hierarchy, weight, line breaks, density, and alignment.

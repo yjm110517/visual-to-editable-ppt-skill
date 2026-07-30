@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from asset_common import AssetError, atomic_write_json, failure, load_contract, log_event, success
+from asset_common import AssetError, atomic_write_json, failure, load_contract, log_event, sha256_file, success
 from manage_run_state import advance as advance_run_state
 
 
@@ -174,7 +174,7 @@ def _copy_to_stage(args: argparse.Namespace, temporary_root: Path) -> tuple[Path
 
 
 def _commit_iteration(stage: Path, target: Path, output_name: str) -> None:
-    names = ["asset_manifest.json", "assets", "svg_security_report.json", output_name, "build_summary.json", "font_audit.json", "rendered_slide.png", "render_report.json", "qa_report.json", "pipeline.log"]
+    names = ["asset_manifest.json", "asset_processing_report.json", "assets", "svg_security_report.json", output_name, "build_summary.json", "font_audit.json", "rendered_slide.png", "render_report.json", "qa_report.json", "pipeline.log"]
     names = [name for name in names if (stage / name).exists()]
     parent = target.parent.resolve()
     with tempfile.TemporaryDirectory(prefix=f".{target.name}-commit-", dir=parent) as temporary:
@@ -236,6 +236,7 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             layout = stage_iteration / "layout.json"
             crops = stage_iteration / "crops.json"
             manifest = stage_iteration / "asset_manifest.json"
+            processing_report = stage_iteration / "asset_processing_report.json"
             assets = stage_iteration / "assets"
             request = staged_work / args.request.name
             _run(_python_command("validate_spec.py", "--phase", "preflight", "--request", str(request), "--layout", str(layout), "--crops", str(crops), "--asset-manifest", str(manifest), "--schema-dir", str(args.schema_dir)), "validate_spec")
@@ -246,9 +247,9 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             pending_crops = [item for item in crop_doc["assets"] if manifest_by_id[item["id"]].get("security_status") != "passed"]
             if pending_crops:
                 pending_path = stage_iteration / ".pending-crops.json"
-                pending_path.write_text(json.dumps({"schema_version": "1.3", "source": crop_doc["source"], "assets": pending_crops}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+                pending_path.write_text(json.dumps({"schema_version": "1.4", "source": crop_doc["source"], "assets": pending_crops}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
                 try:
-                    _run(_python_command("crop_assets.py", "--input", str(staged_source), "--spec", str(pending_path), "--output-dir", str(assets), "--asset-manifest", str(manifest), *_common(args, log)), "crop_assets")
+                    _run(_python_command("crop_assets.py", "--input", str(staged_source), "--spec", str(pending_path), "--contract-spec", str(crops), "--output-dir", str(assets), "--asset-manifest", str(manifest), "--processing-report", str(processing_report), *_common(args, log)), "crop_assets")
                 finally:
                     pending_path.unlink(missing_ok=True)
             else:
@@ -269,7 +270,7 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
                         raise AssetError("existing SVG security report does not cover passed assets", path=str(svg_report), code="svg_report_mismatch")
                     pending_manifest = stage_iteration / ".pending-svg-manifest.json"
                     pending_report = stage_iteration / ".pending-svg-report.json"
-                    atomic_write_json(pending_manifest, {"schema_version": "1.3", "assets": pending_svg})
+                    atomic_write_json(pending_manifest, {"schema_version": "1.4", "assets": pending_svg})
                     try:
                         _run(_python_command("sanitize_svg.py", "--asset-dir", str(assets), "--asset-manifest", str(pending_manifest), "--report", str(pending_report), *_common(args, log)), "sanitize_svg")
                         updated_pending = {item["id"]: item for item in json.loads(pending_manifest.read_text(encoding="utf-8"))["assets"]}
@@ -291,10 +292,15 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             else:
                 log_event(log, level="info", component="sanitize_svg", event="skipped", message="No pending SVG assets", run_id=args.run_id, iteration=args.iteration)
 
-            _run(_python_command("validate_spec.py", "--phase", "build-ready", "--request", str(request), "--layout", str(layout), "--crops", str(crops), "--asset-manifest", str(manifest), "--schema-dir", str(args.schema_dir)), "validate_spec")
+            if processing_report.is_file():
+                processing_document = load_contract("asset_processing_report", processing_report, args.schema_dir)
+                processing_document["asset_manifest_sha256"] = sha256_file(manifest)
+                atomic_write_json(processing_report, processing_document)
+
+            _run(_python_command("validate_spec.py", "--phase", "build-ready", "--request", str(request), "--layout", str(layout), "--crops", str(crops), "--asset-manifest", str(manifest), "--asset-processing-report", str(processing_report), "--schema-dir", str(args.schema_dir)), "validate_spec")
             output = stage_iteration / args.output_ppt.name
             summary = stage_iteration / "build_summary.json"
-            build_command = [str(node), str(SCRIPT_DIR / "build_slide.mjs"), "--iteration-dir", str(stage_iteration), "--layout", str(layout), "--asset-manifest", str(manifest), "--asset-dir", str(assets), "--output", str(output), "--build-summary", str(summary), "--python", sys.executable, "--run-id", args.run_id, "--iteration", str(args.iteration), "--log-file", str(log), "--schema-dir", str(args.schema_dir)]
+            build_command = [str(node), str(SCRIPT_DIR / "build_slide.mjs"), "--iteration-dir", str(stage_iteration), "--layout", str(layout), "--asset-manifest", str(manifest), "--asset-processing-report", str(processing_report), "--asset-dir", str(assets), "--output", str(output), "--build-summary", str(summary), "--python", sys.executable, "--run-id", args.run_id, "--iteration", str(args.iteration), "--log-file", str(log), "--schema-dir", str(args.schema_dir)]
             if svg_items:
                 build_command.extend(["--svg-report", str(svg_report)])
             _run(build_command, "build_slide")
@@ -309,7 +315,7 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
                 render_command.extend(["--width-px", str(args.width_px), "--height-px", str(args.height_px)])
             _run(render_command, "render_ppt")
             qa = stage_iteration / "qa_report.json"
-            verify_command = _python_command("verify_ppt.py", "--request", str(request), "--source", str(staged_source), "--iteration-dir", str(stage_iteration), "--ppt", str(output), "--layout", str(layout), "--crops", str(crops), "--asset-manifest", str(manifest), "--build-summary", str(summary), "--font-audit", str(font_audit), "--render", str(render), "--render-report", str(render_report), "--output", str(qa), *_common(args, log))
+            verify_command = _python_command("verify_ppt.py", "--request", str(request), "--source", str(staged_source), "--iteration-dir", str(stage_iteration), "--ppt", str(output), "--layout", str(layout), "--crops", str(crops), "--asset-manifest", str(manifest), "--asset-processing-report", str(processing_report), "--build-summary", str(summary), "--font-audit", str(font_audit), "--render", str(render), "--render-report", str(render_report), "--output", str(qa), *_common(args, log))
             verify_code, _ = _run(verify_command, "verify_ppt", allow_codes={0, 8})
             log_event(log, level="info" if verify_code == 0 else "error", component=COMPONENT, event="completed" if verify_code == 0 else "structural_failed", message="Single-iteration pipeline completed", run_id=args.run_id, iteration=args.iteration, data={"exit_code": verify_code})
             _commit_iteration(stage_iteration, actual_iteration, args.output_ppt.name)

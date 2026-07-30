@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "assets"],
   "properties": {
-    "schema_version": {"const": "1.4"},
+    "schema_version": {"const": "1.3"},
     "assets": {
       "type": "array",
       "items": {
@@ -18,7 +18,6 @@
           "type": {"enum": ["png", "jpeg", "svg"]},
           "path": {"type": "string", "minLength": 1},
           "source": {"enum": ["cropped", "user-provided", "agent-generated", "locally-redrawn"]},
-          "boundary_policy": {"enum": ["transparent", "source_tile", "shape_mask"]},
           "width_px": {"type": "integer", "minimum": 1},
           "height_px": {"type": "integer", "minimum": 1},
           "size_bytes": {"type": "integer", "minimum": 1},
@@ -32,12 +31,7 @@
         },
         "allOf": [
           {"if": {"properties": {"text_editability_exempt": {"const": true}}, "required": ["text_editability_exempt"]}, "then": {"required": ["exemption_reason"]}},
-          {"if": {"properties": {"type": {"const": "svg"}}, "required": ["type"]}, "then": {"required": ["view_box"]}},
-          {
-            "if": {"properties": {"source": {"const": "cropped"}}, "required": ["source"]},
-            "then": {"required": ["boundary_policy"]},
-            "else": {"not": {"required": ["boundary_policy"]}}
-          }
+          {"if": {"properties": {"type": {"const": "svg"}}, "required": ["type"]}, "then": {"required": ["view_box"]}}
         ]
       }
     }

@@ -43,6 +43,7 @@ Apply these checks before assigning scores:
 | Connector endpoints visibly float between nodes or an arrowhead is not clearly visible | `major` when repeated or meaning is ambiguous; otherwise `minor` | `layout_similarity` |
 | Key central or side-panel proportion visibly changes the hierarchy | `major` | `layout_similarity` |
 | Opaque rectangular crop boundary appears where the source has no tile | `major` | `asset_quality` |
+| A crop contains a complete or partial neighboring number badge, label, body text, border, or unrelated component | at least `major` | `asset_quality` |
 | Circular source artwork leaks rectangular corners | `major` | `asset_quality` |
 | Local background crop creates a hard rectangular seam | `major` | `visual_style_similarity` and `asset_quality` |
 | Multiple source depth cues are flattened at once, such as card borders, shadows, highlights, and layered background | `major` | `visual_style_similarity` |
@@ -53,8 +54,11 @@ The raw response must complete all seven `mandatory_visual_checks` fields:
 connector topology, connector endpoints, key proportions, crop boundaries,
 background seams, visual depth, and typography hierarchy. A failed check must
 reference a non-suggestion issue. A check may be `not_applicable` only when the
-source lacks that feature and the rationale states why. Any failed mandatory
-check prevents a policy pass, regardless of the aggregate score.
+source lacks that feature and the rationale states why. The `crop_boundaries`
+check covers both pixel-edge quality and semantic crop
+purity. A deterministic Alpha/edge report cannot prove that a complete
+neighboring badge or label was not included. Any failed mandatory check
+prevents a policy pass, regardless of the aggregate score.
 
 ## Issues
 

@@ -47,7 +47,8 @@ python scripts/crop_assets.py \
   --input work/topic/source.png \
   --spec work/topic/iterations/01/crops.json \
   --output-dir work/topic/iterations/01/assets \
-  --asset-manifest work/topic/iterations/01/asset_manifest.json
+  --asset-manifest work/topic/iterations/01/asset_manifest.json \
+  --processing-report work/topic/iterations/01/asset_processing_report.json
 
 python scripts/sanitize_svg.py \
   --asset-dir work/topic/iterations/01/assets \
@@ -57,6 +58,7 @@ python scripts/sanitize_svg.py \
 python scripts/validate_assets.py \
   --asset-dir work/topic/iterations/01/assets \
   --asset-manifest work/topic/iterations/01/asset_manifest.json \
+  --processing-report work/topic/iterations/01/asset_processing_report.json \
   --layout work/topic/iterations/01/layout.json
 
 python scripts/package_assets.py \
@@ -74,6 +76,7 @@ node scripts/build_slide.mjs \
   --iteration-dir work/topic/iterations/01 \
   --layout work/topic/iterations/01/layout.json \
   --asset-manifest work/topic/iterations/01/asset_manifest.json \
+  --asset-processing-report work/topic/iterations/01/asset_processing_report.json \
   --asset-dir work/topic/iterations/01/assets \
   --output work/topic/iterations/01/topic_editable.pptx \
   --build-summary work/topic/iterations/01/build_summary.json \
@@ -108,6 +111,7 @@ python scripts/verify_ppt.py \
   --layout work/topic/iterations/01/layout.json \
   --crops work/topic/iterations/01/crops.json \
   --asset-manifest work/topic/iterations/01/asset_manifest.json \
+  --asset-processing-report work/topic/iterations/01/asset_processing_report.json \
   --build-summary work/topic/iterations/01/build_summary.json \
   --font-audit work/topic/iterations/01/font_audit.json \
   --render work/topic/iterations/01/rendered_slide.png \
@@ -208,6 +212,31 @@ The assertion requires structural pass, deterministic policy pass, no failed
 mandatory visual checks, fresh and distinct Planner/Reviewer contexts, and a
 complete current hash chain. Missing review artifacts return delivery-gate
 exit code 10.
+
+For a public README demonstration, require an additional explicit acceptance
+and publish the three public images through the dedicated transaction:
+
+```bash
+python scripts/verify_readme_demo.py \
+  --work-root work/topic \
+  --iteration-dir work/topic/iterations/02 \
+  --run-state work/topic/run_state.json \
+  --planner-call-record work/topic/.agent-calls/02/planner/planner-002/call_record.json \
+  --reviewer-call-record work/topic/.agent-calls/02/reviewer/reviewer-002/call_record.json \
+  --ppt work/topic/iterations/02/topic_editable.pptx \
+  --approval-decision accept \
+  --approval-message-file acceptance.txt \
+  --readme README.md \
+  --publish-dir docs/assets/readme/ai-learning-loop \
+  --output work/topic/readme_demo_verification.json \
+  --run-id task-001 --iteration 2
+```
+
+This command reuses the independent review gate, rejects critical or major
+issues, binds the source, render, PPTX, QA, Review, Evaluation, and call
+contexts to one accepted iteration, generates the comparison image
+deterministically, and atomically replaces the public README assets. Do not
+copy iteration previews into `docs/assets/readme/` by hand.
 
 After evaluation, follow [iteration-and-delivery.md](iteration-and-delivery.md). It freezes the event-driven state interface, seven Patch operations, warning-response evidence, deterministic delivery decision, and exact seven-file packaging gate. Never advance state by editing `run_state.json` directly in a production run.
 

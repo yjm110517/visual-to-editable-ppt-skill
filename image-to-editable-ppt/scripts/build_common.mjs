@@ -14,7 +14,7 @@ export class BuildError extends Error {
 
 export function parseArgs(argv) {
   const values = {};
-  const allowed = new Set(["iteration-dir", "layout", "asset-manifest", "asset-dir", "svg-report", "output", "build-summary", "python", "run-id", "iteration", "log-file", "schema-dir"]);
+  const allowed = new Set(["iteration-dir", "layout", "asset-manifest", "asset-processing-report", "asset-dir", "svg-report", "output", "build-summary", "python", "run-id", "iteration", "log-file", "schema-dir"]);
   for (let index = 0; index < argv.length; index += 2) {
     const option = argv[index];
     const value = argv[index + 1];
@@ -27,7 +27,7 @@ export function parseArgs(argv) {
     }
     values[name] = value;
   }
-  const required = ["iteration-dir", "layout", "asset-manifest", "asset-dir", "output", "build-summary", "run-id", "iteration"];
+  const required = ["iteration-dir", "layout", "asset-manifest", "asset-processing-report", "asset-dir", "output", "build-summary", "run-id", "iteration"];
   const missing = required.filter((name) => !values[name]);
   if (missing.length) {
     throw new BuildError(`missing required options: ${missing.map((name) => `--${name}`).join(", ")}`, { exitCode: 2, category: "cli_error" });

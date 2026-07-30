@@ -12,6 +12,7 @@ from typing import Any
 from defusedxml import ElementTree as SafeET
 
 from asset_common import AssetError, atomic_write_bytes, atomic_write_json, failure, load_contract, log_event, sha256_file, success
+from contract_migration import migrate_v13_spec_bundle
 from iteration_common import append_transition, commit_state, require_under, utc_now
 from schema_utils import ContractError, cross_validate, is_safe_relative_path, validate_schema, validate_semantics
 
@@ -78,6 +79,18 @@ def _remove_svg_report_entry(stage: Path, asset_id: str) -> None:
         path.unlink()
 
 
+def _remove_processing_report_entry(stage: Path, asset_id: str) -> None:
+    path = stage / "asset_processing_report.json"
+    if not path.is_file():
+        return
+    report = json.loads(path.read_text(encoding="utf-8"))
+    assets = [item for item in report.get("assets", []) if item.get("asset_id") != asset_id]
+    if assets:
+        atomic_write_json(path, {**report, "assets": assets, "asset_manifest_sha256": "0" * 64})
+    else:
+        path.unlink()
+
+
 def _remove_asset_file(stage: Path, manifest_item: dict[str, Any]) -> None:
     relative = manifest_item.get("path")
     if relative and is_safe_relative_path(relative):
@@ -129,10 +142,15 @@ def _apply_operation(stage: Path, layout: dict[str, Any], crops: dict[str, Any],
         crop = _item(crops["assets"], "id", operation["asset_id"], "crop asset")
         asset = _item(manifest["assets"], "id", operation["asset_id"], "manifest asset")
         old = copy.deepcopy(asset)
-        crop.update(copy.deepcopy(changes))
+        crop_changes = copy.deepcopy(changes)
+        boundary_policy = crop_changes.pop("boundary_policy", None)
+        crop.update(crop_changes)
+        if boundary_policy is not None:
+            asset["boundary_policy"] = boundary_policy
         _remove_asset_file(stage, old)
         _invalidate_manifest(asset)
         _remove_svg_report_entry(stage, operation["asset_id"])
+        _remove_processing_report_entry(stage, operation["asset_id"])
     elif kind == "replace_asset":
         asset_id = operation["asset_id"]
         asset = _item(manifest["assets"], "id", asset_id, "manifest asset")
@@ -162,6 +180,7 @@ def _apply_operation(stage: Path, layout: dict[str, Any], crops: dict[str, Any],
                 asset["exemption_reason"] = generated["exemption_reason"]
             crops["assets"] = [item for item in crops["assets"] if item["id"] != asset_id]
             _remove_svg_report_entry(stage, asset_id)
+            _remove_processing_report_entry(stage, asset_id)
     elif kind == "reclassify_element":
         element = _item(layout["elements"], "id", operation["element_id"], "element")
         replacement = copy.deepcopy(changes["replacement"])
@@ -185,7 +204,7 @@ def _apply_operation(stage: Path, layout: dict[str, Any], crops: dict[str, Any],
 
 def _copy_inputs(current: Path, stage: Path) -> None:
     stage.mkdir(exist_ok=True)
-    for name in ("layout.json", "crops.json", "asset_manifest.json", "svg_security_report.json"):
+    for name in ("layout.json", "crops.json", "asset_manifest.json", "asset_processing_report.json", "svg_security_report.json"):
         source = current / name
         if source.is_file():
             shutil.copy2(source, stage / name)
@@ -236,9 +255,22 @@ def apply_patch(args: argparse.Namespace) -> dict[str, Any]:
         for field, name in (("layout_sha256", "layout.json"), ("crops_sha256", "crops.json"), ("asset_manifest_sha256", "asset_manifest.json")):
             if sha256_file(stage / name) != expected[field]:
                 raise AssetError("current iteration changed while it was staged", path=name, code="hash_conflict", exit_code=9)
-        layout = load_contract("layout", stage / "layout.json", args.schema_dir)
-        crops = load_contract("crops", stage / "crops.json", args.schema_dir)
-        manifest = load_contract("asset_manifest", stage / "asset_manifest.json", args.schema_dir)
+        raw_layout = json.loads((stage / "layout.json").read_text(encoding="utf-8"))
+        raw_crops = json.loads((stage / "crops.json").read_text(encoding="utf-8"))
+        raw_manifest = json.loads((stage / "asset_manifest.json").read_text(encoding="utf-8"))
+        versions = {raw_layout.get("schema_version"), raw_crops.get("schema_version"), raw_manifest.get("schema_version")}
+        if versions == {"1.3"}:
+            if "contract_transition" not in patch:
+                raise AssetError("v1.3 source iteration requires contract_transition", code="contract_transition")
+            layout, crops, manifest = migrate_v13_spec_bundle(stage, patch["contract_transition"])
+        elif versions == {"1.4"}:
+            if "contract_transition" in patch:
+                raise AssetError("v1.4 source iteration cannot be migrated again", code="contract_transition")
+            layout = load_contract("layout", stage / "layout.json", args.schema_dir)
+            crops = load_contract("crops", stage / "crops.json", args.schema_dir)
+            manifest = load_contract("asset_manifest", stage / "asset_manifest.json", args.schema_dir)
+        else:
+            raise AssetError("spec bundle versions are incomplete or inconsistent", code="contract_transition")
         applied = []
         for operation in patch["operations"]:
             _apply_operation(stage, layout, crops, manifest, operation, approved)

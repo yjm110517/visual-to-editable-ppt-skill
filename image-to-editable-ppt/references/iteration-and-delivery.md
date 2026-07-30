@@ -54,6 +54,35 @@ An approved element is protected directly and through its referenced style or
 asset. An operation affecting any protected dependency requires a non-empty
 `override_reason`.
 
+### Contract 1.3 to 1.4 transition
+
+An archived 1.3 iteration is always read-only. When its next revision needs the
+1.4 asset-boundary contract, the Review Patch must declare a
+`contract_transition` from `1.3` to `1.4` and provide one explicit
+`asset_boundary_policies` entry for every cropped asset in the source
+iteration. Policies are never inferred as `source_tile`.
+
+`apply_review_patch.py` performs the transition only inside its sibling staging
+directory:
+
+1. validate the source layout, crops, and manifest against the retained
+   `schemas/legacy/v1.3/` contracts;
+2. copy the allowed source specifications and still-valid inputs into staging;
+3. upgrade the three documents to schema version 1.4 and persist every declared
+   boundary policy in the asset manifest;
+4. invalidate and remove legacy derived crop files, because they lack 1.4
+   processing evidence;
+5. execute the Review Patch operations;
+6. run the active 1.4 schemas, semantic validation, and cross-document
+   validation;
+7. atomically commit the new iteration.
+
+The new iteration must regenerate every invalidated crop and its
+`asset_processing_report.json` before build-ready validation. A migration
+failure removes staging, creates no target iteration, and leaves every source
+file byte-for-byte unchanged. A 1.4 iteration cannot be migrated again and
+must not contain a `contract_transition`.
+
 ## Warning acceptance
 
 Warnings are deliverable only at the configured final iteration. The state

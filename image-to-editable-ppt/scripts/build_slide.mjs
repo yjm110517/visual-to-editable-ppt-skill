@@ -199,6 +199,7 @@ function runProcess(executable, args) {
 
 async function validateAndResolveAssets(args, python) {
   const command = [path.join(SCRIPT_DIR, "validate_assets.py"), "--asset-dir", args["asset-dir"], "--asset-manifest", args["asset-manifest"], "--layout", args.layout, "--emit-resolved-assets", "--run-id", args["run-id"], "--iteration", String(args.iteration)];
+  if (args["asset-processing-report"]) command.push("--processing-report", args["asset-processing-report"]);
   if (args["svg-report"]) command.push("--svg-report", args["svg-report"]);
   if (args["schema-dir"]) command.push("--schema-dir", args["schema-dir"]);
   if (args["log-file"]) command.push("--log-file", args["log-file"]);
@@ -246,7 +247,7 @@ async function validateSummary(summaryPath, python, args) {
 }
 
 export async function buildPresentation(args) {
-  const inputs = [args.layout, args["asset-manifest"], args["asset-dir"], args["svg-report"]];
+  const inputs = [args.layout, args["asset-manifest"], args["asset-processing-report"], args["asset-dir"], args["svg-report"]];
   const outputs = [args.output, args["build-summary"]];
   const iterationDir = await enforceIterationBoundary(args["iteration-dir"], inputs, outputs, [args["log-file"]]);
   args.__logAuthorized = true;

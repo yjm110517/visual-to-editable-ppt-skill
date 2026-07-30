@@ -15,6 +15,8 @@ description: Convert user-provided screenshots, slide images, or visual designs 
 - Preserve semantic connector topology. A closed loop, curved cycle, merge, or branch must remain visibly connected and directional; do not flatten it into disconnected straight segments.
 - Place connector endpoints close to their source and destination boundaries, and verify that every arrowhead remains clearly visible at final render size. A semantically correct but visibly floating arrow is not acceptable.
 - Inspect every placed crop at render size. Reject visible rectangular crop edges, incompatible tile backgrounds, clipped effects, and decorative background seams that are not present in the source.
+- Decompose numbered steps into a native badge shape, native number text, isolated complex icon asset, and native card/text/connector objects. Never allow complete or partial neighboring numbers, labels, body text, or borders inside an icon crop.
+- Require a persistent `boundary_policy` for every cropped asset and require `asset_processing_report.json` before building. Treat that report as pixel-edge evidence only; semantic crop contamination still requires independent visual review.
 - Preserve stable element and asset IDs across iterations.
 - Save each iteration separately and never overwrite an earlier iteration.
 

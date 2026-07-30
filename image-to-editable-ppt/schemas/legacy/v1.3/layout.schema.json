@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "request", "source", "slide", "metadata", "asset_manifest", "styles", "elements"],
   "properties": {
-    "schema_version": {"const": "1.4"},
+    "schema_version": {"const": "1.3"},
     "request": {"type": "string", "minLength": 1},
     "source": {
       "type": "object",
@@ -53,10 +53,6 @@
           {"$ref": "#/$defs/imageElement"}
         ]
       }
-    },
-    "relationship_groups": {
-      "type": "array",
-      "items": {"$ref": "#/$defs/relationshipGroup"}
     }
   },
   "$defs": {
@@ -109,27 +105,6 @@
         "control1": {"$ref": "#/$defs/curvePoint"},
         "control2": {"$ref": "#/$defs/curvePoint"},
         "end": {"$ref": "#/$defs/curvePoint"}
-      }
-    },
-    "relationshipGroup": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "kind", "node_ids", "connector_ids"],
-      "properties": {
-        "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
-        "kind": {"enum": ["closed_cycle", "directed_path"]},
-        "node_ids": {
-          "type": "array",
-          "minItems": 2,
-          "uniqueItems": true,
-          "items": {"type": "string", "minLength": 1}
-        },
-        "connector_ids": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {"type": "string", "minLength": 1}
-        }
       }
     },
     "shadow": {
