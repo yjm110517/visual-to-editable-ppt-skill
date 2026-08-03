@@ -54,6 +54,7 @@
             }
           },
           "complexity_signals": {
+            "description": "Observed source effects. A signal describes appearance; it does not by itself select a representation. soft_shadow alone does not force rasterization for a genuinely simple_vector or background_decoration. Regular geometric texture may be native, text-free vector texture may be SVG, and source-specific raster texture may be cropped.",
             "type": "array",
             "uniqueItems": true,
             "items": {
@@ -82,7 +83,10 @@
             "uniqueItems": true,
             "items": {"type": "string", "minLength": 1}
           },
-          "contains_readable_text": {"type": "boolean"},
+          "contains_readable_text": {
+            "type": "boolean",
+            "description": "True only when readable text remains inseparably inside an emitted SVG or cropped asset. Native text elsewhere on the slide does not make this true. Native representation decisions must set false."
+          },
           "fidelity_risk": {"enum": ["low", "medium", "high"]},
           "rationale": {"type": "string", "minLength": 8}
         },
@@ -92,7 +96,8 @@
             "then": {
               "properties": {
                 "element_ids": {"minItems": 1},
-                "asset_ids": {"maxItems": 0}
+                "asset_ids": {"maxItems": 0},
+                "contains_readable_text": {"const": false}
               }
             }
           },

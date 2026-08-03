@@ -10,6 +10,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import PIL
+
 from asset_common import AssetError, atomic_write_json, failure, load_contract, log_event, sha256_file, success
 from manage_run_state import advance as advance_run_state
 
@@ -238,6 +240,7 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             manifest = stage_iteration / "asset_manifest.json"
             processing_report = stage_iteration / "asset_processing_report.json"
             assets = stage_iteration / "assets"
+            assets.mkdir(parents=True, exist_ok=True)
             request = staged_work / args.request.name
             _run(_python_command("validate_spec.py", "--phase", "preflight", "--request", str(request), "--layout", str(layout), "--crops", str(crops), "--asset-manifest", str(manifest), "--schema-dir", str(args.schema_dir)), "validate_spec")
 
@@ -254,6 +257,21 @@ def run_pipeline(args: argparse.Namespace) -> dict[str, Any]:
                     pending_path.unlink(missing_ok=True)
             else:
                 log_event(log, level="info", component="crop_assets", event="skipped", message="No pending raster crops", run_id=args.run_id, iteration=args.iteration)
+                if not crop_doc["assets"] and not processing_report.is_file():
+                    atomic_write_json(processing_report, {
+                        "schema_version": "1.4",
+                        "source_sha256": sha256_file(staged_source),
+                        "crops_sha256": sha256_file(crops),
+                        "asset_manifest_sha256": sha256_file(manifest),
+                        "algorithm": {
+                            "id": "edge-connected-background-v1",
+                            "implementation_version": "1.0.0",
+                            "python_version": ".".join(map(str, sys.version_info[:3])),
+                            "pillow_version": PIL.__version__,
+                        },
+                        "assets": [],
+                        "status": "passed",
+                    })
 
             manifest_doc = load_contract("asset_manifest", manifest, args.schema_dir)
             svg_items = [item for item in manifest_doc["assets"] if item["type"] == "svg"]

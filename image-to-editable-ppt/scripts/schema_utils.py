@@ -53,6 +53,11 @@ class ContractError(ValueError):
         super().__init__("; ".join(error["message"] for error in self.errors))
 
 
+SLIDE_BOUNDS_TOLERANCE_IN = 0.5 / 72.0
+CONNECTOR_BOUNDARY_TOLERANCE_IN = 0.18
+CONNECTOR_CONTENT_SAFE_INSET_IN = 0.12
+
+
 def load_json(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as stream:
         value = json.load(stream)
@@ -224,8 +229,19 @@ def validate_semantics(kind: str, document: dict[str, Any]) -> None:
                 failures.append(error(base, "non-line elements require positive width and height"))
             if item["type"] == "line" and item["w"] == 0 and item["h"] == 0:
                 failures.append(error(base, "line elements require non-zero width or height"))
-            if not item.get("allow_overflow", False) and (item["x"] + item["w"] > width or item["y"] + item["h"] > height):
-                failures.append(error(base, "element exceeds slide bounds"))
+            right = item["x"] + item["w"]
+            bottom = item["y"] + item["h"]
+            if not item.get("allow_overflow", False) and (
+                right > width + SLIDE_BOUNDS_TOLERANCE_IN
+                or bottom > height + SLIDE_BOUNDS_TOLERANCE_IN
+            ):
+                failures.append(error(
+                    base,
+                    "element exceeds slide bounds: "
+                    f"right={right:.6f}, bottom={bottom:.6f}, "
+                    f"slide_right={width:.6f}, slide_bottom={height:.6f}, "
+                    f"rounding_tolerance={SLIDE_BOUNDS_TOLERANCE_IN:.6f} in",
+                ))
             if "style_ref" in item and item["style_ref"] not in styles:
                 failures.append(error(base + ".style_ref", "unknown style reference"))
             if item["type"] == "shape" and not item.get("fill") and not item.get("line"):
@@ -287,14 +303,33 @@ def validate_semantics(kind: str, document: dict[str, Any]) -> None:
                 start, end = _connector_endpoints(connector)
                 source = by_id.get(source_id)
                 target = by_id.get(target_id)
-                if source and _distance_to_box_boundary(start, source) > 0.18:
-                    failures.append(error(f"$.elements[{elements.index(connector)}]", "connector start is more than 0.18 in from source boundary"))
-                if target and _distance_to_box_boundary(end, target) > 0.18:
-                    failures.append(error(f"$.elements[{elements.index(connector)}]", "connector end is more than 0.18 in from target boundary"))
-                if source and _inside_box(start, source, inset=0.12):
-                    failures.append(error(f"$.elements[{elements.index(connector)}]", "connector start enters the source content safe area"))
-                if target and _inside_box(end, target, inset=0.12):
-                    failures.append(error(f"$.elements[{elements.index(connector)}]", "connector end enters the target content safe area"))
+                connector_path = f"$.elements[{elements.index(connector)}]"
+                source_distance = _distance_to_box_boundary(start, source) if source else None
+                target_distance = _distance_to_box_boundary(end, target) if target else None
+                if source_distance is not None and source_distance > CONNECTOR_BOUNDARY_TOLERANCE_IN:
+                    failures.append(error(
+                        connector_path,
+                        f"connector {connector_id} start {start} is {source_distance:.6f} in from source {source_id} boundary; "
+                        f"maximum is {CONNECTOR_BOUNDARY_TOLERANCE_IN:.2f} in",
+                    ))
+                if target_distance is not None and target_distance > CONNECTOR_BOUNDARY_TOLERANCE_IN:
+                    failures.append(error(
+                        connector_path,
+                        f"connector {connector_id} end {end} is {target_distance:.6f} in from target {target_id} boundary; "
+                        f"maximum is {CONNECTOR_BOUNDARY_TOLERANCE_IN:.2f} in",
+                    ))
+                if source and _inside_box(start, source, inset=CONNECTOR_CONTENT_SAFE_INSET_IN):
+                    failures.append(error(
+                        connector_path,
+                        f"connector {connector_id} start {start} enters source {source_id} content safe area "
+                        f"with {CONNECTOR_CONTENT_SAFE_INSET_IN:.2f} in inset",
+                    ))
+                if target and _inside_box(end, target, inset=CONNECTOR_CONTENT_SAFE_INSET_IN):
+                    failures.append(error(
+                        connector_path,
+                        f"connector {connector_id} end {end} enters target {target_id} content safe area "
+                        f"with {CONNECTOR_CONTENT_SAFE_INSET_IN:.2f} in inset",
+                    ))
     elif kind == "crops":
         assets = document["assets"]
         _unique(assets, "id", "$.assets", failures)
@@ -457,11 +492,9 @@ def validate_semantics(kind: str, document: dict[str, Any]) -> None:
             _unique(assets, "filename", "$.generated_assets", failures)
             decisions = document.get("representation_decisions", [])
             _unique(decisions, "id", "$.representation_decisions", failures)
-            raster_signals = {
+            crop_only_signals = {
                 "inner_shadow",
-                "soft_shadow",
                 "three_dimensional",
-                "texture",
                 "photographic_detail",
             }
             for index, decision in enumerate(decisions):
@@ -473,12 +506,26 @@ def validate_semantics(kind: str, document: dict[str, Any]) -> None:
                 signals = set(decision["complexity_signals"])
                 if visual_kind == "complex_icon" and representation == "native":
                     failures.append(error(base + ".selected_representation", "complex source icons cannot be replaced by native placeholders"))
-                if visual_kind in {"photograph", "texture"} and representation != "crop":
-                    failures.append(error(base + ".selected_representation", f"{visual_kind} requires a source crop"))
-                if signals & raster_signals and representation != "crop":
+                if visual_kind == "photograph" and representation != "crop":
+                    failures.append(error(base + ".selected_representation", "photographs require a source crop"))
+                if signals & crop_only_signals and representation != "crop":
                     failures.append(error(base + ".selected_representation", "raster-dependent effects require a source crop"))
+                if (
+                    "soft_shadow" in signals
+                    and representation != "crop"
+                    and visual_kind not in {"simple_vector", "background_decoration"}
+                ):
+                    failures.append(error(
+                        base + ".selected_representation",
+                        "soft-shadowed source artwork requires a crop unless it is a genuinely simple vector or background decoration reproducible with the supported native outer shadow",
+                    ))
                 if representation == "native" and decision["fidelity_risk"] == "high":
                     failures.append(error(base + ".fidelity_risk", "high-risk visuals cannot use native representation"))
+                if representation == "native" and decision["contains_readable_text"]:
+                    failures.append(error(
+                        base + ".contains_readable_text",
+                        "native representation must set contains_readable_text=false; native slide text is declared as layout text elements, not retained inside an asset",
+                    ))
                 if decision["contains_readable_text"] and visual_kind != "brand_mark":
                     failures.append(error(base + ".contains_readable_text", "only an inseparable brand mark may retain readable text in an asset"))
             total = 0
@@ -515,6 +562,34 @@ def validate_semantics(kind: str, document: dict[str, Any]) -> None:
 def cross_validate(documents: dict[str, dict[str, Any]]) -> None:
     failures: list[dict[str, str]] = []
     manifest_ids = {item["id"] for item in documents.get("asset_manifest", {}).get("assets", [])}
+    if "layout" in documents and "crops" in documents:
+        source = documents["layout"]["source"]
+        source_width = source["width_px"]
+        source_height = source["height_px"]
+        for index, item in enumerate(documents["crops"]["assets"]):
+            left, top, right, bottom = item["box_px"]
+            padding = item["padding_px"]
+            path = f"$.crops.assets[{index}].box_px"
+            if left < 0 or top < 0 or right > source_width or bottom > source_height:
+                failures.append(error(
+                    path,
+                    f"crop {item['id']} box {item['box_px']} exceeds source bounds "
+                    f"[0, 0, {source_width}, {source_height}]",
+                    "crop_bounds",
+                ))
+            padded_box = [left - padding, top - padding, right + padding, bottom + padding]
+            if (
+                padded_box[0] < 0
+                or padded_box[1] < 0
+                or padded_box[2] > source_width
+                or padded_box[3] > source_height
+            ):
+                failures.append(error(
+                    path,
+                    f"crop {item['id']} padded box {padded_box} (padding={padding}) exceeds source bounds "
+                    f"[0, 0, {source_width}, {source_height}]",
+                    "crop_bounds",
+                ))
     if "crops" in documents and "asset_manifest" in documents:
         crops_by_id = {item["id"]: item for item in documents["crops"]["assets"]}
         for index, item in enumerate(documents["crops"]["assets"]):

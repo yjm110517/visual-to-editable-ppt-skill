@@ -13,8 +13,18 @@ from schema_utils import ContractError, is_safe_relative_path, load_json, valida
 
 
 class AssetError(ValueError):
-    def __init__(self, message: str, *, path: str = "$", code: str = "asset_error", exit_code: int = 4):
+    def __init__(
+        self,
+        message: str,
+        *,
+        path: str = "$",
+        code: str = "asset_error",
+        exit_code: int = 4,
+        details: Any | None = None,
+    ):
         self.detail = {"path": path, "code": code, "message": message}
+        if details is not None:
+            self.detail["details"] = details
         self.exit_code = exit_code
         super().__init__(message)
 
@@ -123,5 +133,8 @@ def failure(component: str, exc: Exception, *, run_id: str, iteration: int | Non
         code, detail = exc.exit_code, exc.detail
     else:
         code, detail = 70, {"path": "$", "code": "internal_error", "message": str(exc)}
-    print(json.dumps({"status": "error", "component": component, "run_id": run_id, "iteration": iteration, "outputs": {}, "error": {"exit_code": code, "category": detail["code"], "message": detail["message"], "path": detail["path"]}}, ensure_ascii=False, sort_keys=True))
+    error_payload = {"exit_code": code, "category": detail["code"], "message": detail["message"], "path": detail["path"]}
+    if "details" in detail:
+        error_payload["details"] = detail["details"]
+    print(json.dumps({"status": "error", "component": component, "run_id": run_id, "iteration": iteration, "outputs": {}, "error": error_payload}, ensure_ascii=False, sort_keys=True))
     return code

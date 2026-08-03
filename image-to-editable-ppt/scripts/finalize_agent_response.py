@@ -409,7 +409,17 @@ def main() -> int:
             outputs = _finalize_review(args, work_root, manifest, record, response, input_hashes)
         log_event(args.log_file, level="info", component=COMPONENT, event="completed", message="Agent response finalized", run_id=args.run_id, iteration=args.iteration, data={"role": args.role, "mode": args.mode})
         return success(COMPONENT, outputs, run_id=args.run_id, iteration=args.iteration)
-    except (ContractError, UnicodeError, json.JSONDecodeError) as exc:
+    except ContractError as exc:
+        details = sorted(exc.errors, key=lambda item: (item.get("path", "$"), item.get("code", ""), item.get("message", "")))
+        wrapped = AssetError(
+            "contract validation failed",
+            path=details[0].get("path", "$") if details else "$",
+            code="contract_error",
+            details=details,
+        )
+        log_event(args.log_file, level="error", component=COMPONENT, event="failed", message=str(wrapped), run_id=args.run_id, iteration=args.iteration, data={"exit_code": 4, "details": details})
+        return failure(COMPONENT, wrapped, run_id=args.run_id, iteration=args.iteration)
+    except (UnicodeError, json.JSONDecodeError) as exc:
         wrapped = AssetError(str(exc), path="$", code="contract_error")
         log_event(args.log_file, level="error", component=COMPONENT, event="failed", message=str(wrapped), run_id=args.run_id, iteration=args.iteration, data={"exit_code": 4})
         return failure(COMPONENT, wrapped, run_id=args.run_id, iteration=args.iteration)

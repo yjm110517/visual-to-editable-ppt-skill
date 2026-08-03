@@ -16,8 +16,24 @@
         "required": ["id", "output", "box_px", "padding_px", "mode", "remove_background"],
         "properties": {
           "id": {"type": "string", "minLength": 1},
-          "output": {"type": "string", "minLength": 1},
-          "box_px": {"type": "array", "prefixItems": [{"type": "integer", "minimum": 0}, {"type": "integer", "minimum": 0}, {"type": "integer", "minimum": 0}, {"type": "integer", "minimum": 0}], "minItems": 4, "maxItems": 4},
+          "output": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "description": "A filename only, such as icon_target.png. Do not include assets/, a drive letter, or any path separator."
+          },
+          "box_px": {
+            "type": "array",
+            "description": "Absolute source-image pixel edges in the fixed order [left, top, right, bottom]. right and bottom are exclusive edges, not width and height.",
+            "prefixItems": [
+              {"type": "integer", "minimum": 0, "title": "left"},
+              {"type": "integer", "minimum": 0, "title": "top"},
+              {"type": "integer", "minimum": 0, "title": "right"},
+              {"type": "integer", "minimum": 0, "title": "bottom"}
+            ],
+            "minItems": 4,
+            "maxItems": 4
+          },
           "padding_px": {"type": "integer", "minimum": 0},
           "mode": {"enum": ["rgb", "rgba"]},
           "remove_background": {"type": "boolean"},

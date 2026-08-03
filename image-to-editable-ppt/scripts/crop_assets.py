@@ -160,13 +160,38 @@ def _matte_background(
     rgba = image.convert("RGBA")
     width, height = rgba.size
     if width < SAFE_MARGIN_PX * 2 + 1 or height < SAFE_MARGIN_PX * 2 + 1:
-        raise AssetError("crop is too small for the transparent safety margin", code="insufficient_transparent_margin")
+        raise AssetError(
+            "crop is too small for the transparent safety margin",
+            code="insufficient_transparent_margin",
+            details={
+                "measurements": {"width_px": width, "height_px": height},
+                "thresholds": {"safe_margin_px": SAFE_MARGIN_PX},
+                "recommended_actions": ["expand_crop_box"],
+            },
+        )
     exclusions = exclusions or []
     estimate, coverage, confidence = _background_model(rgba, exclusions)
     if coverage < BACKGROUND_CLUSTER_MIN or confidence < BACKGROUND_CONFIDENCE_MIN:
+        reason = "low_background_coverage" if coverage < BACKGROUND_CLUSTER_MIN else "low_background_confidence"
         raise AssetError(
             f"background confidence is insufficient: coverage={coverage}, confidence={confidence}",
             code="background_confidence",
+            details={
+                "failure_reason": reason,
+                "measurements": {
+                    "background_cluster_coverage": coverage,
+                    "background_confidence": confidence,
+                    "estimated_background": list(estimate),
+                },
+                "thresholds": {
+                    "background_cluster_min": BACKGROUND_CLUSTER_MIN,
+                    "background_confidence_min": BACKGROUND_CONFIDENCE_MIN,
+                },
+                "recommended_actions": [
+                    "adjust_crop_box_to_sample_a_more_consistent_outer_background",
+                    "use_source_tile_only_if_the_reference_contains_a_complete_deliberate_tile",
+                ],
+            },
         )
     pixels = rgba.load()
     for left, top, right, bottom in exclusions:
@@ -184,8 +209,20 @@ def _matte_background(
         + [(0, y) for y in range(height - 2, 0, -1)]
     )
     foreground_on_boundary = [distance(x, y) > BACKGROUND_FEATHER_DISTANCE for x, y in boundary]
-    if _boundary_runs(foreground_on_boundary) >= 3:
-        raise AssetError("foreground content touches the crop boundary", code="foreground_touches_boundary")
+    longest_boundary_run = _boundary_runs(foreground_on_boundary)
+    if longest_boundary_run >= 3:
+        raise AssetError(
+            "foreground content touches the crop boundary",
+            code="foreground_touches_boundary",
+            details={
+                "measurements": {"foreground_boundary_run_px": longest_boundary_run},
+                "thresholds": {"maximum_foreground_boundary_run_px": 2},
+                "recommended_actions": [
+                    "expand_crop_box_or_padding_without_crossing_the_source_boundary",
+                    "adjust_crop_box_to_include_the_complete_shadow_and_highlight",
+                ],
+            },
+        )
 
     queue: deque[tuple[int, int]] = deque()
     connected: set[tuple[int, int]] = set()
@@ -227,6 +264,14 @@ def _matte_background(
         raise AssetError(
             f"transparent foreground clearance is {clearance}px; {SAFE_MARGIN_PX}px required",
             code="insufficient_transparent_margin",
+            details={
+                "measurements": {"foreground_clearance_px": clearance},
+                "thresholds": {"safe_margin_px": SAFE_MARGIN_PX},
+                "recommended_actions": [
+                    "expand_crop_box_or_padding_without_crossing_the_source_boundary",
+                    "adjust_crop_box_to_center_the_complete_foreground",
+                ],
+            },
         )
     edge_alpha_max = max(out[x, y][3] for x, y in boundary)
     return output, {
@@ -310,11 +355,20 @@ def crop_assets(args: argparse.Namespace) -> dict[str, Any]:
                 try:
                     crop, metrics = _matte_background(crop, operation["exclusions"])
                 except AssetError as exc:
+                    details = {
+                        "asset_id": operation["crop"]["id"],
+                        "boundary_policy": policy,
+                        "box_px": operation["crop"]["box_px"],
+                        "padded_box_px": list(operation["box"]),
+                        "padding_px": operation["crop"]["padding_px"],
+                        **(exc.detail.get("details") or {}),
+                    }
                     raise AssetError(
                         str(exc),
                         path=operation["crop"]["id"],
                         code=exc.detail["code"],
                         exit_code=exc.exit_code,
+                        details=details,
                     ) from exc
             else:
                 mode = "RGBA" if operation["crop"]["mode"] == "rgba" else "RGB"

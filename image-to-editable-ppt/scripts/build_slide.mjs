@@ -96,7 +96,10 @@ function basePosition(element, objectName) {
 
 function buildText(slide, layout, element, typography) {
   const style = styleFor(layout, element);
-  const rawRuns = element.runs ?? [{ text: element.text }];
+  const rawRuns = element.runs ?? String(element.text).split("\n").map((text, index, parts) => ({
+    text,
+    break_line: index < parts.length - 1,
+  }));
   const runs = rawRuns.map((run, index) => {
     const options = textRunOptions(run, element, style);
     const source = run.font_face ? "run" : element.font_face ? "element" : "style";
