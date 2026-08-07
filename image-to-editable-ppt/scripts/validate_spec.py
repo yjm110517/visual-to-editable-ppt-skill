@@ -10,7 +10,7 @@ from schema_utils import ContractError, SCHEMA_FILES, cross_validate, load_json,
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description="Validate v1.3 Image to Editable PPT contracts.")
+    result = argparse.ArgumentParser(description="Validate Image to Editable PPT contracts.")
     result.add_argument("--schema-dir", type=Path, default=Path(__file__).resolve().parents[1] / "schemas")
     result.add_argument("--phase", choices=("preflight", "build-ready"), default="preflight")
     for kind in SCHEMA_FILES:
@@ -32,6 +32,25 @@ def main() -> int:
             validate_schema(kind, document, args.schema_dir)
             validate_semantics(kind, document)
             documents[kind] = document
+        if args.phase == "build-ready" and "asset_manifest" in documents:
+            cropped_assets = [
+                item["id"]
+                for item in documents["asset_manifest"]["assets"]
+                if item["source"] == "cropped"
+            ]
+            if cropped_assets and "asset_processing_report" not in documents:
+                raise ContractError(
+                    [
+                        {
+                            "path": "$.asset_processing_report",
+                            "code": "missing_processing_evidence",
+                            "message": (
+                                "build-ready validation requires asset_processing_report "
+                                f"for cropped assets: {sorted(cropped_assets)}"
+                            ),
+                        }
+                    ]
+                )
         cross_validate(documents)
         if args.phase == "build-ready" and "asset_manifest" in documents:
             validate_build_ready(selected["asset_manifest"], documents["asset_manifest"])

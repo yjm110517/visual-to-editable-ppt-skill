@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "task_id", "iteration", "reviewer_recommendation", "scores", "issues", "mandatory_visual_checks", "approved_elements", "warnings", "review_context", "agent_provenance"],
   "properties": {
-    "schema_version": {"const": "1.3"},
+    "schema_version": {"const": "1.4"},
     "task_id": {"type": "string", "minLength": 1},
     "iteration": {"type": "integer", "minimum": 1},
     "reviewer_recommendation": {"enum": ["pass", "revise", "fail"]},
@@ -18,17 +18,18 @@
     "review_context": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["source_sha256", "render_sha256", "layout_sha256", "qa_report_sha256", "asset_manifest_sha256", "request_sha256", "review_rubric_sha256", "reviewer_response_schema_sha256", "reviewer_role_version"],
+      "required": ["source_sha256", "render_sha256", "layout_sha256", "qa_report_sha256", "asset_manifest_sha256", "asset_processing_report_sha256", "request_sha256", "review_rubric_sha256", "reviewer_response_schema_sha256", "reviewer_role_version"],
       "properties": {
         "source_sha256": {"$ref": "#/$defs/hash"},
         "render_sha256": {"$ref": "#/$defs/hash"},
         "layout_sha256": {"$ref": "#/$defs/hash"},
         "qa_report_sha256": {"$ref": "#/$defs/hash"},
         "asset_manifest_sha256": {"$ref": "#/$defs/hash"},
+        "asset_processing_report_sha256": {"$ref": "#/$defs/hash"},
         "request_sha256": {"$ref": "#/$defs/hash"},
         "review_rubric_sha256": {"$ref": "#/$defs/hash"},
         "reviewer_response_schema_sha256": {"$ref": "#/$defs/hash"},
-        "reviewer_role_version": {"type": "string", "pattern": "^1\\.3\\.[0-9]+$"}
+        "reviewer_role_version": {"type": "string", "pattern": "^1\\.[34]\\.[0-9]+$"}
       }
     },
     "agent_provenance": {

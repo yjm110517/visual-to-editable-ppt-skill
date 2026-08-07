@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "asset-processing-report.schema.json",
+  "title": "Deterministic Asset Processing Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_sha256",
+    "crops_sha256",
+    "asset_manifest_sha256",
+    "algorithm",
+    "assets",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.4"},
+    "source_sha256": {"$ref": "#/$defs/hash"},
+    "crops_sha256": {"$ref": "#/$defs/hash"},
+    "asset_manifest_sha256": {"$ref": "#/$defs/hash"},
+    "status": {"enum": ["passed", "failed"]},
+    "algorithm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "implementation_version", "python_version", "pillow_version"],
+      "properties": {
+        "id": {"const": "edge-connected-background-v1"},
+        "implementation_version": {"const": "1.0.0"},
+        "python_version": {"type": "string", "minLength": 1},
+        "pillow_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "asset_id",
+          "boundary_policy",
+          "estimated_background",
+          "background_cluster_coverage",
+          "background_confidence",
+          "edge_alpha_max",
+          "foreground_clearance_px",
+          "foreground_touches_edge",
+          "semantic_exclusion_boxes_px",
+          "output_sha256",
+          "status",
+          "failure_codes"
+        ],
+        "properties": {
+          "asset_id": {"type": "string", "minLength": 1},
+          "boundary_policy": {"enum": ["transparent", "source_tile", "shape_mask"]},
+          "estimated_background": {
+            "type": ["array", "null"],
+            "prefixItems": [
+              {"type": "integer", "minimum": 0, "maximum": 255},
+              {"type": "integer", "minimum": 0, "maximum": 255},
+              {"type": "integer", "minimum": 0, "maximum": 255}
+            ],
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "background_cluster_coverage": {"type": "number", "minimum": 0, "maximum": 1},
+          "background_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+          "edge_alpha_max": {"type": "integer", "minimum": 0, "maximum": 255},
+          "foreground_clearance_px": {"type": "integer", "minimum": 0},
+          "foreground_touches_edge": {"type": "boolean"},
+          "semantic_exclusion_boxes_px": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {"type": "integer", "minimum": 0},
+                {"type": "integer", "minimum": 0},
+                {"type": "integer", "minimum": 0},
+                {"type": "integer", "minimum": 0}
+              ],
+              "minItems": 4,
+              "maxItems": 4
+            }
+          },
+          "output_sha256": {"$ref": "#/$defs/hash"},
+          "status": {"enum": ["passed", "failed"]},
+          "failure_codes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

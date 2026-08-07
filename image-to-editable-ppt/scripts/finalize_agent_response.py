@@ -135,6 +135,12 @@ def _validate_representation_decisions(
                         path=base + ".asset_ids",
                         code="representation_mismatch",
                     )
+                if asset.get("boundary_policy") != decision["boundary_policy"]:
+                    raise AssetError(
+                        "crop boundary policy must match the asset manifest",
+                        path=base + ".boundary_policy",
+                        code="representation_mismatch",
+                    )
             elif asset["type"] != "svg":
                 raise AssetError(
                     "SVG representation requires an SVG manifest entry",
@@ -167,7 +173,15 @@ def _finalize_initial(args: argparse.Namespace, response: dict[str, Any]) -> dic
     for kind, document in (("layout", layout), ("crops", crops), ("asset_manifest", asset_manifest)):
         validate_schema(kind, document, args.schema_dir)
         validate_semantics(kind, document)
-    cross_validate({"request": request, "layout": layout, "crops": crops, "asset_manifest": asset_manifest})
+    cross_validate(
+        {
+            "request": request,
+            "layout": layout,
+            "crops": crops,
+            "asset_manifest": asset_manifest,
+            "planner_response": response,
+        }
+    )
     _validate_no_full_page_raster(layout, crops, asset_manifest)
     _validate_representation_decisions(response, layout, crops, asset_manifest)
 
@@ -308,7 +322,11 @@ def _finalize_review(args: argparse.Namespace, work_root: Path, call_manifest: d
         raise AssetError("review output must be iteration-dir/review_report.json", path=str(target), code="path_escape")
     if target.exists():
         raise AssetError("review report already exists", path=str(target), code="output_conflict", exit_code=9)
-    _verify_current_inputs(iteration, input_hashes, ["layout.json", "qa_report.json", "asset_manifest.json", "rendered_slide.png"])
+    _verify_current_inputs(
+        iteration,
+        input_hashes,
+        ["layout.json", "qa_report.json", "asset_manifest.json", "asset_processing_report.json", "rendered_slide.png"],
+    )
     request_path = work_root / "request.json"
     request_document = _load_call_input(args.call_dir, "request.json")
     source_path = work_root / request_document["source_image"]
@@ -339,8 +357,11 @@ def _finalize_review(args: argparse.Namespace, work_root: Path, call_manifest: d
         normalized["element_ids"] = sorted(issue["element_ids"])
         normalized["asset_ids"] = sorted(issue["asset_ids"])
         ordered_issues.append(normalized)
+    processing_report_path = iteration / "asset_processing_report.json"
+    if not processing_report_path.is_file() or sha256_file(processing_report_path) != input_hashes["asset_processing_report.json"]:
+        raise AssetError("asset processing report changed after Reviewer call", path=str(processing_report_path), code="hash_conflict", exit_code=9)
     report = {
-        "schema_version": "1.3", "task_id": response["task_id"], "iteration": response["iteration"],
+        "schema_version": "1.4", "task_id": response["task_id"], "iteration": response["iteration"],
         "reviewer_recommendation": response["reviewer_recommendation"], "scores": response["scores"],
         "issues": ordered_issues,
         "mandatory_visual_checks": response["mandatory_visual_checks"],
@@ -349,6 +370,7 @@ def _finalize_review(args: argparse.Namespace, work_root: Path, call_manifest: d
             "source_sha256": input_hashes["source.png"], "render_sha256": input_hashes["rendered_slide.png"],
             "layout_sha256": input_hashes["layout.json"], "qa_report_sha256": input_hashes["qa_report.json"],
             "asset_manifest_sha256": input_hashes["asset_manifest.json"], "request_sha256": input_hashes["request.json"],
+            "asset_processing_report_sha256": input_hashes["asset_processing_report.json"],
             "review_rubric_sha256": input_hashes["visual-review-rubric.md"],
             "reviewer_response_schema_sha256": input_hashes["reviewer-response.schema.json"],
             "reviewer_role_version": call_manifest["role_version"],
@@ -387,7 +409,17 @@ def main() -> int:
             outputs = _finalize_review(args, work_root, manifest, record, response, input_hashes)
         log_event(args.log_file, level="info", component=COMPONENT, event="completed", message="Agent response finalized", run_id=args.run_id, iteration=args.iteration, data={"role": args.role, "mode": args.mode})
         return success(COMPONENT, outputs, run_id=args.run_id, iteration=args.iteration)
-    except (ContractError, UnicodeError, json.JSONDecodeError) as exc:
+    except ContractError as exc:
+        details = sorted(exc.errors, key=lambda item: (item.get("path", "$"), item.get("code", ""), item.get("message", "")))
+        wrapped = AssetError(
+            "contract validation failed",
+            path=details[0].get("path", "$") if details else "$",
+            code="contract_error",
+            details=details,
+        )
+        log_event(args.log_file, level="error", component=COMPONENT, event="failed", message=str(wrapped), run_id=args.run_id, iteration=args.iteration, data={"exit_code": 4, "details": details})
+        return failure(COMPONENT, wrapped, run_id=args.run_id, iteration=args.iteration)
+    except (UnicodeError, json.JSONDecodeError) as exc:
         wrapped = AssetError(str(exc), path="$", code="contract_error")
         log_event(args.log_file, level="error", component=COMPONENT, event="failed", message=str(wrapped), run_id=args.run_id, iteration=args.iteration, data={"exit_code": 4})
         return failure(COMPONENT, wrapped, run_id=args.run_id, iteration=args.iteration)

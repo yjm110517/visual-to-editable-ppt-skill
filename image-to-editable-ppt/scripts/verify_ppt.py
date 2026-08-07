@@ -41,6 +41,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--layout", required=True, type=Path)
     result.add_argument("--crops", required=True, type=Path)
     result.add_argument("--asset-manifest", required=True, type=Path)
+    result.add_argument("--asset-processing-report", required=True, type=Path)
     result.add_argument("--build-summary", required=True, type=Path)
     result.add_argument("--font-audit", required=True, type=Path)
     result.add_argument("--render", required=True, type=Path)
@@ -135,7 +136,17 @@ def _media_is_valid(shape: ET.Element, relationships: dict[str, str], archive_na
 
 
 def _inspect_pptx(ppt: Path, layout: dict[str, Any], summary: dict[str, Any], hard_failures: list[str]) -> dict[str, Any]:
-    result: dict[str, Any] = {"slide_count": 0, "slide_width": 0, "slide_height": 0, "objects": {}, "duplicate_names": [], "untracked_names": [], "out_of_bounds": 0, "missing_media": 0}
+    result: dict[str, Any] = {
+        "slide_count": 0,
+        "slide_width": 0,
+        "slide_height": 0,
+        "objects": {},
+        "duplicate_names": [],
+        "untracked_names": [],
+        "out_of_bounds": 0,
+        "missing_media": 0,
+        "connector_arrow_violations": 0,
+    }
     try:
         presentation = Presentation(ppt)
         result["slide_count"] = len(presentation.slides)
@@ -171,6 +182,17 @@ def _inspect_pptx(ppt: Path, layout: dict[str, Any], summary: dict[str, Any], ha
                             result["out_of_bounds"] += 1
                     if element and element["type"] == "image" and not _media_is_valid(shape, relationships, archive_names):
                         result["missing_media"] += 1
+                    if element and element["type"] == "line":
+                        line = shape.find(".//a:ln", NS)
+                        begin = line.find("a:headEnd", NS) if line is not None else None
+                        end = line.find("a:tailEnd", NS) if line is not None else None
+                        actual_begin = begin.attrib.get("type", "none") if begin is not None else "none"
+                        actual_end = end.attrib.get("type", "none") if end is not None else "none"
+                        line_contract = element.get("line", {})
+                        expected_begin = line_contract.get("begin_arrow", "none")
+                        expected_end = line_contract.get("end_arrow", "none")
+                        if actual_begin != expected_begin or actual_end != expected_end:
+                            result["connector_arrow_violations"] += 1
     except (OSError, ValueError, KeyError, zipfile.BadZipFile, ET.ParseError) as exc:
         _failure(hard_failures, "INVALID_PPTX", str(exc))
     return result
@@ -227,7 +249,7 @@ def verify_ppt(args: argparse.Namespace) -> dict[str, Any]:
         iteration_dir.relative_to(work_root)
     except ValueError as exc:
         raise AssetError("iteration directory escapes request work root", path=str(args.iteration_dir), code="path_escape") from exc
-    for candidate in (args.ppt, args.layout, args.crops, args.asset_manifest, args.build_summary, args.font_audit, args.render, args.render_report, args.output):
+    for candidate in (args.ppt, args.layout, args.crops, args.asset_manifest, args.asset_processing_report, args.build_summary, args.font_audit, args.render, args.render_report, args.output):
         try:
             candidate.resolve().relative_to(iteration_dir)
         except ValueError as exc:
@@ -244,10 +266,19 @@ def verify_ppt(args: argparse.Namespace) -> dict[str, Any]:
     layout = load_contract("layout", args.layout, args.schema_dir)
     crops = load_contract("crops", args.crops, args.schema_dir)
     manifest = load_contract("asset_manifest", args.asset_manifest, args.schema_dir)
+    processing_report = load_contract("asset_processing_report", args.asset_processing_report, args.schema_dir)
     summary = load_contract("build_summary", args.build_summary, args.schema_dir)
     font_audit = load_contract("font_audit", args.font_audit, args.schema_dir)
     render_report = load_contract("render_report", args.render_report, args.schema_dir)
-    cross_validate({"request": request, "layout": layout, "crops": crops, "asset_manifest": manifest})
+    cross_validate(
+        {
+            "request": request,
+            "layout": layout,
+            "crops": crops,
+            "asset_manifest": manifest,
+            "asset_processing_report": processing_report,
+        }
+    )
     validate_build_ready(args.asset_manifest, manifest)
     iteration = args.iteration or layout["metadata"]["iteration"]
     if layout["metadata"]["iteration"] != iteration or summary["iteration"] != iteration:
@@ -259,6 +290,12 @@ def verify_ppt(args: argparse.Namespace) -> dict[str, Any]:
     hard_failures: list[str] = []
     warnings = list(font_audit["warnings"]) + list(render_report["warnings"])
     layout_hash, manifest_hash, ppt_hash, render_hash = sha256_file(args.layout), sha256_file(args.asset_manifest), sha256_file(args.ppt), sha256_file(args.render)
+    if processing_report["source_sha256"] != sha256_file(args.source):
+        _failure(hard_failures, "ASSET_SOURCE_HASH_CONFLICT", "asset processing report does not match source")
+    if processing_report["crops_sha256"] != sha256_file(args.crops):
+        _failure(hard_failures, "ASSET_CROPS_HASH_CONFLICT", "asset processing report does not match crops")
+    if processing_report["asset_manifest_sha256"] != manifest_hash:
+        _failure(hard_failures, "ASSET_MANIFEST_HASH_CONFLICT", "asset processing report does not match manifest")
     if summary["hashes"]["layout_sha256"] != layout_hash:
         _failure(hard_failures, "LAYOUT_HASH_CONFLICT", "build summary does not match layout")
     if summary["hashes"]["asset_manifest_sha256"] != manifest_hash:
@@ -279,6 +316,27 @@ def verify_ppt(args: argparse.Namespace) -> dict[str, Any]:
     actual_names = set(inspection["objects"])
     if summary_names != actual_names:
         _failure(hard_failures, "BUILD_MAP_CONFLICT", "actual object names do not match build summary")
+    expected_connections = {
+        item["id"]: (item.get("from_id"), item.get("to_id"))
+        for item in layout["elements"]
+        if item["type"] == "line"
+    }
+    summary_connections = {
+        item["element_id"]: (item["from_id"], item["to_id"])
+        for item in summary["connections"]
+    }
+    if summary_connections != expected_connections:
+        _failure(hard_failures, "CONNECTION_METADATA_CONFLICT", "build summary connections do not match layout")
+    missing_connection_refs = sorted(
+        {
+            reference
+            for endpoints in summary_connections.values()
+            for reference in endpoints
+            if reference is not None and reference not in actual_base_ids
+        }
+    )
+    if missing_connection_refs:
+        _failure(hard_failures, "MISSING_CONNECTION_REFERENCES", ", ".join(missing_connection_refs))
     if missing_ids:
         _failure(hard_failures, "MISSING_ELEMENT_IDS", ", ".join(missing_ids))
     if unexpected_ids:
@@ -325,6 +383,8 @@ def verify_ppt(args: argparse.Namespace) -> dict[str, Any]:
         _failure(hard_failures, "OUT_OF_BOUNDS_SHAPES", str(inspection["out_of_bounds"]))
     if inspection["missing_media"]:
         _failure(hard_failures, "MISSING_MEDIA", str(inspection["missing_media"]))
+    if inspection["connector_arrow_violations"]:
+        _failure(hard_failures, "CONNECTOR_ARROW_VIOLATIONS", str(inspection["connector_arrow_violations"]))
     if font_audit["font_violations"]:
         _failure(hard_failures, "FONT_VIOLATIONS", str(font_audit["font_violations"]))
     if render_report["rendered_page_count"] != inspection["slide_count"]:
@@ -332,8 +392,23 @@ def verify_ppt(args: argparse.Namespace) -> dict[str, Any]:
 
     skill_dir = Path(__file__).resolve().parents[1]
     package = json.loads((skill_dir / "scripts" / "package.json").read_text(encoding="utf-8"))
+    boundary_violations = sum(
+        1
+        for item in processing_report["assets"]
+        if item["status"] != "passed"
+        or (
+            item["boundary_policy"] == "transparent"
+            and (
+                item["edge_alpha_max"] != 0
+                or item["foreground_touches_edge"]
+                or item["foreground_clearance_px"] < 3
+            )
+        )
+    )
+    if boundary_violations:
+        _failure(hard_failures, "ASSET_BOUNDARY_VIOLATIONS", str(boundary_violations))
     report = {
-        "schema_version": "1.3",
+        "schema_version": "1.4",
         "status": "fail" if hard_failures else "pass",
         "iteration": iteration,
         "hard_failures": sorted(set(hard_failures)),
@@ -352,6 +427,7 @@ def verify_ppt(args: argparse.Namespace) -> dict[str, Any]:
             "unexpected_element_ids": unexpected_ids,
             "out_of_bounds_shapes": inspection["out_of_bounds"],
             "missing_media": inspection["missing_media"],
+            "asset_boundary_violations": boundary_violations,
             "font_violations": font_audit["font_violations"],
             "rendered_page_count": render_report["rendered_page_count"],
         },
@@ -362,6 +438,7 @@ def verify_ppt(args: argparse.Namespace) -> dict[str, Any]:
             "layout_sha256": layout_hash,
             "crops_sha256": sha256_file(args.crops),
             "asset_manifest_sha256": manifest_hash,
+            "asset_processing_report_sha256": sha256_file(args.asset_processing_report),
             "build_summary_sha256": sha256_file(args.build_summary),
             "ppt_sha256": ppt_hash,
             "render_sha256": render_hash,

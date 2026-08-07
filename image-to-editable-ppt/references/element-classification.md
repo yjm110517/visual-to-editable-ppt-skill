@@ -10,7 +10,26 @@ Choose the representation in this order:
 
 1. Use native PowerPoint only when the visual can be reproduced faithfully with basic geometry, supported fills, lines, and text.
 2. Use sanitized SVG for a flat vector visual with complex paths but without photographic detail, texture, 3D rendering, or source-specific soft effects.
-3. Crop and re-encode the source as PNG or JPEG when visual identity depends on gradients, highlights, inner shadows, soft shadows, transparency, 3D treatment, texture, irregular detail, or photographic detail.
+3. Crop and re-encode the source as PNG or JPEG when visual identity depends on source-specific raster/noise texture, photographic detail, rendered 3D treatment, identity-defining inner shadow, or other pixel-level detail that native objects or safe SVG cannot preserve.
+
+`texture` is a visual category, not a mandatory file type. Classify its internal
+structure before selecting a representation:
+
+- regular dots, lines, rings, grids, and repeatable geometric patterns may be
+  native PowerPoint composites;
+- text-free vector texture or decoration may be a sanitized SVG;
+- organic, photographic, noise-based, or source-specific raster texture should
+  be a crop when its boundaries can blend safely;
+- one larger motif may be decomposed into native, SVG, and cropped
+  subcomponents. Record each subcomponent as a separate representation
+  decision rather than flattening the entire motif.
+
+A basic PowerPoint-compatible outer shadow on a genuinely simple card, panel,
+badge, or background decoration does not by itself force rasterization. Record
+`soft_shadow`, keep `visual_kind: simple_vector` or `background_decoration`, and
+use native representation only when the supported outer-shadow primitive
+faithfully reproduces the source. A polished icon whose shadow, highlight, or
+depth is part of its identity still requires a crop.
 
 The following are not acceptable substitutes for a distinctive source icon:
 
@@ -20,6 +39,16 @@ The following are not acceptable substitutes for a distinctive source icon:
 
 If a source icon is already isolated inside a text-free tile, crop the icon or tile and keep surrounding card text, borders, and connectors native. Crop the smallest region that preserves the complete effect without including unrelated readable text.
 
+For a numbered process step, always inventory and emit separate elements for:
+
+- the native badge ellipse or circle;
+- the native number text;
+- the isolated complex icon crop;
+- the native card, border, heading, body text, and connectors.
+
+Neither a complete number badge nor any fragment of it may enter the icon crop.
+The same prohibition applies to neighboring labels, body text, and card borders.
+
 Before accepting a crop, compare its boundary pixels with the intended PowerPoint surface:
 
 - If the source uses a visible tile, reproduce that tile deliberately and keep its size, corner radius, border, and fill consistent.
@@ -27,14 +56,38 @@ Before accepting a crop, compare its boundary pixels with the intended PowerPoin
 - If the source image is clipped to a circle or ellipse, set the image `rounding` option and verify that no rectangular corner remains visible.
 - Do not use automatic background removal merely to hide a poor crop. Preserve identity first and use only a validated asset-processing path.
 
+Every cropped asset has one persistent boundary policy:
+
+- `transparent`: PNG/RGBA, deterministic edge-connected background removal,
+  and a verified transparent safety margin;
+- `source_tile`: preserve a complete, deliberate, text-free source tile exactly
+  as it exists in the reference; never use this label for a clipped card edge;
+- `shape_mask`: preserve the full crop and require `rounding: true` on every
+  referring image element.
+
+The policy is declared by the Planner and persisted in `asset_manifest.json`.
+`asset_processing_report.json` records what the deterministic processor actually
+did. Alpha and edge checks do not prove semantic purity; the Reviewer must still
+look for complete or partial neighboring numbers, labels, text, or borders.
+
+If an unrelated adjacent component, such as a badge or a card-edge strip,
+overlaps the icon's rectangular bounding box but not the icon pixels, a crop
+may declare an explicit absolute-source `semantic_exclusion_boxes_px`
+rectangle. Keep it as small as possible, require it to remain inside the
+unpadded crop, and record it in the processing report. The Reviewer must
+confirm that the exclusion removed only the unrelated component and did not
+erase a shadow, highlight, or any intended icon detail.
+
 Use this decision table:
 
 | Source visual | Required representation |
 |---|---|
 | Text, cards, dividers, simple arrows, basic geometric diagrams | Native PowerPoint |
+| Regular dot, line, ring, grid, halo, or geometric texture | Native PowerPoint composite |
+| Text-free vector texture, glow, or decorative pattern | Native PowerPoint or sanitized SVG |
 | Flat vector icon with source-independent styling | Native PowerPoint or sanitized SVG |
 | Polished UI icon with gradients, highlights, soft shadow, 3D depth, or irregular detail | Cropped PNG |
-| Photograph, portrait, textured illustration, or rendered object | Cropped PNG/JPEG |
+| Photograph, portrait, source-specific raster texture, textured illustration, or rendered object | Cropped PNG/JPEG |
 | Logo or seal whose text cannot be separated | Cropped asset with a valid text exemption |
 | Whole slide or text-bearing content card | Forbidden rasterization |
 
@@ -55,13 +108,14 @@ Use a raster asset for a complex photographic, textured, illustrated, rendered, 
 - Use PNG for transparency or lossless graphic regions. Preserve source alpha when it exists.
 - Use JPEG only for opaque RGB photographic regions.
 - Crop only from an explicitly authorized source image and a validated `crops.json` entry.
+- Express every crop rectangle as absolute source edges `[left, top, right, bottom]`; right and bottom are exclusive edges, never width and height. Use a filename-only `output` such as `icon_target.png`; the manifest, not the crop specification, adds the `assets/` directory.
 - Require the original and padded crop bounds to remain fully inside the source. Never silently clamp a crop.
 - Re-encode the pixels and remove EXIF, XMP, comments, and other nonessential metadata.
 - Do not use automatic background removal in P2.
 
 ## Decorative background regions
 
-A local background crop is allowed only when it contains no required text and its boundaries blend into the surrounding native slide. Inspect all four edges in the rendered output.
+A local background crop is allowed only when the texture is genuinely raster-specific, contains no required text, and its boundaries blend into the surrounding native slide. Inspect all four edges in the rendered output. Regular patterns should normally be native; text-free vector patterns may be sanitized SVG.
 
 Reject a local background crop when it creates a visible rectangular seam, repeats a texture incorrectly, changes the page lighting direction, or requires stretching that distorts a recognizable pattern. In that case, prefer layered native shapes or a sanitized text-free SVG approximation. Never trade one background mismatch for a more visible crop boundary.
 
@@ -75,6 +129,13 @@ Treat arrows and connectors as semantic structure, not decoration. Inventory the
 - keep the visual gap between a connector endpoint and its source or destination node small and consistent with the reference; a semantically correct but visibly floating arrow is not acceptable;
 - preserve a visibly closed cycle as a closed directional cycle.
 
+Use `from_id` and `to_id` only when a line expresses a real source-to-target
+relationship. Both fields are required together, and the destination end must
+have an arrowhead. A decorative stem, underline, divider, leader accent, or
+card-edge flourish omits both fields even when it visually touches another
+object. Do not invent semantic endpoints for decoration merely to satisfy the
+connector fields.
+
 If the current primitives cannot preserve a complex connector faithfully, record the limitation and use a text-free sanitized SVG for the connector layer rather than silently replacing the topology with unrelated straight lines.
 
 ## Observed visual failure patterns
@@ -87,6 +148,7 @@ These failures were observed during an end-to-end reconstruction and must be tre
 | A curve has the right direction but visibly floats between cards | A preset arc bounding box was adjusted without controlling its actual endpoints | Use `geometry: curve`, place start and end near the corresponding node boundaries, and verify arrowhead visibility at final render size |
 | A circular central illustration shows rectangular corners | A rectangular PNG was placed without preserving its visible source mask | Use `rounding: true` for circular or elliptical source artwork and verify the rendered boundary |
 | An icon appears inside a new opaque rectangle not present in the source | The crop included a source surface whose boundary did not match the destination card | Tighten the crop or reproduce the source tile deliberately; reject accidental boundary rectangles |
+| A native sequence number is duplicated by a clipped number fragment inside the icon | The badge and complex icon were not decomposed before cropping | Re-crop the icon without the badge; keep the number as a native ellipse and text; report the contamination as at least `major/asset_quality` |
 | A decorative crop creates a hard-edged rectangle across the slide | A local background crop was used without edge compatibility checks | Reject the crop and rebuild the layer with native shapes or a seam-free textless asset |
 | The central object, side panels, or footer changes the page hierarchy | Elements were positioned independently without comparing key proportions | Compare the main bounding boxes and negative space side by side before approval |
 | Cards are structurally correct but visually flat | Borders, shadows, highlights, and layered surfaces were omitted because structure QA passed | Preserve the minimum depth cues needed for source similarity and require visual review after structural QA |
@@ -112,6 +174,12 @@ Readable slide text must be native PowerPoint text. If inseparable text is part 
 ```
 
 An asset with `contains_text: true` and no valid exemption is a hard validation failure. SVG `text`, `tspan`, and `textPath` are always rejected; convert decorative SVG text to paths before sanitization and still declare the applicable exemption.
+
+In a Planner representation decision, `contains_readable_text` means readable
+text remains inside the emitted asset. It does not mean the source region also
+contains separate native text elements. Therefore every native decision sets
+`contains_readable_text: false`; only an inseparable brand-mark asset may set it
+to `true`, and its manifest exemption must match.
 
 ## Build boundary
 

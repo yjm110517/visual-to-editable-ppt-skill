@@ -31,6 +31,19 @@ SCHEMA_FILES = {
     "agent_call_record": "agent-call-record.schema.json",
     "planner_response": "planner-response.schema.json",
     "reviewer_response": "reviewer-response.schema.json",
+    "asset_processing_report": "asset-processing-report.schema.json",
+}
+
+SCHEMA_VERSIONS = {
+    **{kind: "1.3" for kind in SCHEMA_FILES},
+    "layout": "1.4",
+    "crops": "1.4",
+    "asset_manifest": "1.4",
+    "qa_report": "1.4",
+    "review_report": "1.4",
+    "review_patch": "1.4",
+    "planner_response": "1.4",
+    "asset_processing_report": "1.4",
 }
 
 
@@ -38,6 +51,11 @@ class ContractError(ValueError):
     def __init__(self, errors: Iterable[dict[str, Any]]):
         self.errors = list(errors)
         super().__init__("; ".join(error["message"] for error in self.errors))
+
+
+SLIDE_BOUNDS_TOLERANCE_IN = 0.5 / 72.0
+CONNECTOR_BOUNDARY_TOLERANCE_IN = 0.18
+CONNECTOR_CONTENT_SAFE_INSET_IN = 0.12
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -123,6 +141,41 @@ def _region_ok(region: dict[str, Any]) -> bool:
     return region["x"] + region["w"] <= 1 and region["y"] + region["h"] <= 1
 
 
+def _connector_endpoints(item: dict[str, Any]) -> tuple[tuple[float, float], tuple[float, float]]:
+    if item.get("geometry", "straight") == "curve":
+        curve = item["curve"]
+        endpoints = (
+            (item["x"] + curve["start"]["x"], item["y"] + curve["start"]["y"]),
+            (item["x"] + curve["end"]["x"], item["y"] + curve["end"]["y"]),
+        )
+    else:
+        endpoints = (item["x"], item["y"]), (item["x"] + item["w"], item["y"] + item["h"])
+    line = item.get("line", {})
+    if line.get("begin_arrow", "none") != "none" and line.get("end_arrow", "none") == "none":
+        return endpoints[1], endpoints[0]
+    return endpoints
+
+
+def _inside_box(point: tuple[float, float], box: dict[str, Any], *, inset: float) -> bool:
+    if box["w"] <= inset * 2 or box["h"] <= inset * 2:
+        return False
+    return (
+        box["x"] + inset < point[0] < box["x"] + box["w"] - inset
+        and box["y"] + inset < point[1] < box["y"] + box["h"] - inset
+    )
+
+
+def _distance_to_box_boundary(point: tuple[float, float], box: dict[str, Any]) -> float:
+    x, y = point
+    left, top = box["x"], box["y"]
+    right, bottom = left + box["w"], top + box["h"]
+    if left <= x <= right and top <= y <= bottom:
+        return min(x - left, right - x, y - top, bottom - y)
+    dx = max(left - x, 0.0, x - right)
+    dy = max(top - y, 0.0, y - bottom)
+    return (dx * dx + dy * dy) ** 0.5
+
+
 def _validate_review_issues(document: dict[str, Any], failures: list[dict[str, str]]) -> None:
     _unique(document["issues"], "id", "$.issues", failures)
     issues_by_id = {item["id"]: item for item in document["issues"]}
@@ -156,8 +209,9 @@ def _validate_review_issues(document: dict[str, Any], failures: list[dict[str, s
 
 def validate_semantics(kind: str, document: dict[str, Any]) -> None:
     failures: list[dict[str, str]] = []
-    if document.get("schema_version") != SCHEMA_VERSION:
-        failures.append(error("$.schema_version", f"expected {SCHEMA_VERSION}"))
+    expected_version = SCHEMA_VERSIONS[kind]
+    if document.get("schema_version") != expected_version:
+        failures.append(error("$.schema_version", f"expected {expected_version}"))
 
     if kind == "request":
         policy = document["review_policy"]
@@ -175,8 +229,19 @@ def validate_semantics(kind: str, document: dict[str, Any]) -> None:
                 failures.append(error(base, "non-line elements require positive width and height"))
             if item["type"] == "line" and item["w"] == 0 and item["h"] == 0:
                 failures.append(error(base, "line elements require non-zero width or height"))
-            if not item.get("allow_overflow", False) and (item["x"] + item["w"] > width or item["y"] + item["h"] > height):
-                failures.append(error(base, "element exceeds slide bounds"))
+            right = item["x"] + item["w"]
+            bottom = item["y"] + item["h"]
+            if not item.get("allow_overflow", False) and (
+                right > width + SLIDE_BOUNDS_TOLERANCE_IN
+                or bottom > height + SLIDE_BOUNDS_TOLERANCE_IN
+            ):
+                failures.append(error(
+                    base,
+                    "element exceeds slide bounds: "
+                    f"right={right:.6f}, bottom={bottom:.6f}, "
+                    f"slide_right={width:.6f}, slide_bottom={height:.6f}, "
+                    f"rounding_tolerance={SLIDE_BOUNDS_TOLERANCE_IN:.6f} in",
+                ))
             if "style_ref" in item and item["style_ref"] not in styles:
                 failures.append(error(base + ".style_ref", "unknown style reference"))
             if item["type"] == "shape" and not item.get("fill") and not item.get("line"):
@@ -202,6 +267,69 @@ def validate_semantics(kind: str, document: dict[str, Any]) -> None:
                 for field in ("from_id", "to_id"):
                     if item.get(field) and item[field] not in element_ids:
                         failures.append(error(base + f".{field}", "unknown connection element id"))
+                if bool(item.get("from_id")) != bool(item.get("to_id")):
+                    failures.append(error(base, "semantic connectors require both from_id and to_id"))
+                if item.get("from_id") == item.get("to_id") and item.get("from_id"):
+                    failures.append(error(base, "connector source and destination must differ"))
+                if item.get("from_id"):
+                    if item.get("geometry", "straight") == "arc":
+                        failures.append(error(base + ".geometry", "semantic connectors require straight or endpoint-controlled curve geometry"))
+                    line = item.get("line", {})
+                    if line.get("end_arrow", "none") == "none" and line.get("begin_arrow", "none") == "none":
+                        failures.append(error(base + ".line", "semantic connectors require a destination arrowhead"))
+        groups = document.get("relationship_groups", [])
+        _unique(groups, "id", "$.relationship_groups", failures)
+        by_id = {item["id"]: item for item in elements}
+        for group_index, group in enumerate(groups):
+            base = f"$.relationship_groups[{group_index}]"
+            nodes = group["node_ids"]
+            connectors = group["connector_ids"]
+            expected_count = len(nodes) if group["kind"] == "closed_cycle" else len(nodes) - 1
+            if len(connectors) != expected_count:
+                failures.append(error(base + ".connector_ids", f"{group['kind']} requires {expected_count} connectors"))
+                continue
+            for node_id in nodes:
+                if node_id not in by_id or by_id[node_id]["type"] == "line":
+                    failures.append(error(base + ".node_ids", f"unknown or invalid node: {node_id}"))
+            for connector_index, connector_id in enumerate(connectors):
+                connector = by_id.get(connector_id)
+                if connector is None or connector.get("type") != "line":
+                    failures.append(error(base + ".connector_ids", f"unknown line connector: {connector_id}"))
+                    continue
+                source_id = nodes[connector_index]
+                target_id = nodes[(connector_index + 1) % len(nodes)]
+                if connector.get("from_id") != source_id or connector.get("to_id") != target_id:
+                    failures.append(error(base + f".connector_ids[{connector_index}]", f"must connect {source_id} to {target_id}"))
+                start, end = _connector_endpoints(connector)
+                source = by_id.get(source_id)
+                target = by_id.get(target_id)
+                connector_path = f"$.elements[{elements.index(connector)}]"
+                source_distance = _distance_to_box_boundary(start, source) if source else None
+                target_distance = _distance_to_box_boundary(end, target) if target else None
+                if source_distance is not None and source_distance > CONNECTOR_BOUNDARY_TOLERANCE_IN:
+                    failures.append(error(
+                        connector_path,
+                        f"connector {connector_id} start {start} is {source_distance:.6f} in from source {source_id} boundary; "
+                        f"maximum is {CONNECTOR_BOUNDARY_TOLERANCE_IN:.2f} in",
+                    ))
+                if target_distance is not None and target_distance > CONNECTOR_BOUNDARY_TOLERANCE_IN:
+                    failures.append(error(
+                        connector_path,
+                        f"connector {connector_id} end {end} is {target_distance:.6f} in from target {target_id} boundary; "
+                        f"maximum is {CONNECTOR_BOUNDARY_TOLERANCE_IN:.2f} in",
+                    ))
+                if source and _inside_box(start, source, inset=CONNECTOR_CONTENT_SAFE_INSET_IN):
+                    failures.append(error(
+                        connector_path,
+                        f"connector {connector_id} start {start} enters source {source_id} content safe area "
+                        f"with {CONNECTOR_CONTENT_SAFE_INSET_IN:.2f} in inset",
+                    ))
+                if target and _inside_box(end, target, inset=CONNECTOR_CONTENT_SAFE_INSET_IN):
+                    failures.append(error(
+                        connector_path,
+                        f"connector {connector_id} end {end} enters target {target_id} content safe area "
+                        f"with {CONNECTOR_CONTENT_SAFE_INSET_IN:.2f} in inset",
+                    ))
     elif kind == "crops":
         assets = document["assets"]
         _unique(assets, "id", "$.assets", failures)
@@ -214,6 +342,15 @@ def validate_semantics(kind: str, document: dict[str, Any]) -> None:
                 failures.append(error(f"$.assets[{index}].box_px", "crop box must be non-empty"))
             if not is_safe_relative_path(item["output"], filename_only=True):
                 failures.append(error(f"$.assets[{index}].output", "unsafe output filename"))
+            exclusions = item.get("semantic_exclusion_boxes_px", [])
+            if exclusions and not item["remove_background"]:
+                failures.append(error(f"$.assets[{index}].semantic_exclusion_boxes_px", "semantic exclusions require background removal"))
+            for exclusion_index, exclusion in enumerate(exclusions):
+                ex_left, ex_top, ex_right, ex_bottom = exclusion
+                if ex_right <= ex_left or ex_bottom <= ex_top:
+                    failures.append(error(f"$.assets[{index}].semantic_exclusion_boxes_px[{exclusion_index}]", "exclusion box must be non-empty"))
+                if ex_left < left or ex_top < top or ex_right > right or ex_bottom > bottom:
+                    failures.append(error(f"$.assets[{index}].semantic_exclusion_boxes_px[{exclusion_index}]", "exclusion box must stay inside the unpadded crop box"))
     elif kind == "asset_manifest":
         assets = document["assets"]
         _unique(assets, "id", "$.assets", failures)
@@ -224,6 +361,8 @@ def validate_semantics(kind: str, document: dict[str, Any]) -> None:
                 failures.append(error(base + ".path", "unsafe asset path"))
             if item["contains_text"] and not item["text_editability_exempt"]:
                 failures.append(error(base, "text-bearing assets require an editability exemption"))
+            if item["source"] == "cropped" and "boundary_policy" not in item:
+                failures.append(error(base + ".boundary_policy", "cropped assets require a boundary policy"))
     elif kind in {"review_report", "reviewer_response"}:
         _validate_review_issues(document, failures)
     elif kind == "review_patch":
@@ -243,6 +382,9 @@ def validate_semantics(kind: str, document: dict[str, Any]) -> None:
                     failures.append(error(base + ".changes.generated_svg.content", "generated SVG contains forbidden active, text, or external content"))
                 if generated["contains_text"] and (not generated["text_editability_exempt"] or not generated.get("exemption_reason")):
                     failures.append(error(base + ".changes.generated_svg", "text-bearing generated SVG requires an exemption"))
+        transition = document.get("contract_transition")
+        if transition and set(transition["asset_boundary_policies"]) == set():
+            failures.append(error("$.contract_transition.asset_boundary_policies", "migration requires explicit policies"))
     elif kind == "qa_report":
         metrics = document["metrics"]
         if metrics["editable_text_status"] == "not_applicable" and metrics["editable_text_ratio"] is not None:
@@ -253,6 +395,20 @@ def validate_semantics(kind: str, document: dict[str, Any]) -> None:
             failures.append(error("$.hard_failures", "must be empty when status is pass"))
         if document["status"] == "fail" and not document["hard_failures"]:
             failures.append(error("$.hard_failures", "must not be empty when status is fail"))
+        if document["status"] == "pass" and metrics["asset_boundary_violations"]:
+            failures.append(error("$.metrics.asset_boundary_violations", "must be zero when status is pass"))
+    elif kind == "asset_processing_report":
+        _unique(document["assets"], "asset_id", "$.assets", failures)
+        failed = [item for item in document["assets"] if item["status"] == "failed"]
+        if document["status"] == "passed" and failed:
+            failures.append(error("$.status", "passed report cannot contain failed assets"))
+        if document["status"] == "failed" and not failed:
+            failures.append(error("$.status", "failed report requires at least one failed asset"))
+        for index, item in enumerate(document["assets"]):
+            if item["status"] == "passed" and item["failure_codes"]:
+                failures.append(error(f"$.assets[{index}].failure_codes", "passed assets cannot have failure codes"))
+            if item["status"] == "failed" and not item["failure_codes"]:
+                failures.append(error(f"$.assets[{index}].failure_codes", "failed assets require failure codes"))
     elif kind == "font_audit":
         if document["font_violations"] != sum(len(item["violations"]) for item in document["runs"]):
             failures.append(error("$.font_violations", "must equal the total run violation count"))
@@ -336,11 +492,9 @@ def validate_semantics(kind: str, document: dict[str, Any]) -> None:
             _unique(assets, "filename", "$.generated_assets", failures)
             decisions = document.get("representation_decisions", [])
             _unique(decisions, "id", "$.representation_decisions", failures)
-            raster_signals = {
+            crop_only_signals = {
                 "inner_shadow",
-                "soft_shadow",
                 "three_dimensional",
-                "texture",
                 "photographic_detail",
             }
             for index, decision in enumerate(decisions):
@@ -352,12 +506,26 @@ def validate_semantics(kind: str, document: dict[str, Any]) -> None:
                 signals = set(decision["complexity_signals"])
                 if visual_kind == "complex_icon" and representation == "native":
                     failures.append(error(base + ".selected_representation", "complex source icons cannot be replaced by native placeholders"))
-                if visual_kind in {"photograph", "texture"} and representation != "crop":
-                    failures.append(error(base + ".selected_representation", f"{visual_kind} requires a source crop"))
-                if signals & raster_signals and representation != "crop":
+                if visual_kind == "photograph" and representation != "crop":
+                    failures.append(error(base + ".selected_representation", "photographs require a source crop"))
+                if signals & crop_only_signals and representation != "crop":
                     failures.append(error(base + ".selected_representation", "raster-dependent effects require a source crop"))
+                if (
+                    "soft_shadow" in signals
+                    and representation != "crop"
+                    and visual_kind not in {"simple_vector", "background_decoration"}
+                ):
+                    failures.append(error(
+                        base + ".selected_representation",
+                        "soft-shadowed source artwork requires a crop unless it is a genuinely simple vector or background decoration reproducible with the supported native outer shadow",
+                    ))
                 if representation == "native" and decision["fidelity_risk"] == "high":
                     failures.append(error(base + ".fidelity_risk", "high-risk visuals cannot use native representation"))
+                if representation == "native" and decision["contains_readable_text"]:
+                    failures.append(error(
+                        base + ".contains_readable_text",
+                        "native representation must set contains_readable_text=false; native slide text is declared as layout text elements, not retained inside an asset",
+                    ))
                 if decision["contains_readable_text"] and visual_kind != "brand_mark":
                     failures.append(error(base + ".contains_readable_text", "only an inseparable brand mark may retain readable text in an asset"))
             total = 0
@@ -394,10 +562,52 @@ def validate_semantics(kind: str, document: dict[str, Any]) -> None:
 def cross_validate(documents: dict[str, dict[str, Any]]) -> None:
     failures: list[dict[str, str]] = []
     manifest_ids = {item["id"] for item in documents.get("asset_manifest", {}).get("assets", [])}
+    if "layout" in documents and "crops" in documents:
+        source = documents["layout"]["source"]
+        source_width = source["width_px"]
+        source_height = source["height_px"]
+        for index, item in enumerate(documents["crops"]["assets"]):
+            left, top, right, bottom = item["box_px"]
+            padding = item["padding_px"]
+            path = f"$.crops.assets[{index}].box_px"
+            if left < 0 or top < 0 or right > source_width or bottom > source_height:
+                failures.append(error(
+                    path,
+                    f"crop {item['id']} box {item['box_px']} exceeds source bounds "
+                    f"[0, 0, {source_width}, {source_height}]",
+                    "crop_bounds",
+                ))
+            padded_box = [left - padding, top - padding, right + padding, bottom + padding]
+            if (
+                padded_box[0] < 0
+                or padded_box[1] < 0
+                or padded_box[2] > source_width
+                or padded_box[3] > source_height
+            ):
+                failures.append(error(
+                    path,
+                    f"crop {item['id']} padded box {padded_box} (padding={padding}) exceeds source bounds "
+                    f"[0, 0, {source_width}, {source_height}]",
+                    "crop_bounds",
+                ))
     if "crops" in documents and "asset_manifest" in documents:
+        crops_by_id = {item["id"]: item for item in documents["crops"]["assets"]}
         for index, item in enumerate(documents["crops"]["assets"]):
             if item["id"] not in manifest_ids:
                 failures.append(error(f"$.crops.assets[{index}].id", "crop asset is missing from asset manifest"))
+        for index, asset in enumerate(documents["asset_manifest"]["assets"]):
+            if asset["source"] != "cropped":
+                continue
+            crop = crops_by_id.get(asset["id"])
+            if crop is None:
+                failures.append(error(f"$.asset_manifest.assets[{index}].id", "cropped asset is missing from crops"))
+                continue
+            policy = asset["boundary_policy"]
+            if policy == "transparent":
+                if asset["type"] != "png" or crop["mode"] != "rgba" or not crop["remove_background"]:
+                    failures.append(error(f"$.asset_manifest.assets[{index}].boundary_policy", "transparent requires PNG, rgba, and remove_background=true"))
+            elif policy in {"source_tile", "shape_mask"} and crop["remove_background"]:
+                failures.append(error(f"$.asset_manifest.assets[{index}].boundary_policy", f"{policy} requires remove_background=false"))
     if "layout" in documents and "asset_manifest" in documents:
         manifest_by_id = {item["id"]: item for item in documents["asset_manifest"]["assets"]}
         for index, item in enumerate(documents["layout"]["elements"]):
@@ -409,6 +619,40 @@ def cross_validate(documents: dict[str, dict[str, Any]]) -> None:
                     failures.append(error(f"$.layout.elements[{index}].contains_text", "must match asset manifest"))
                 if item.get("text_editability_exempt", asset["text_editability_exempt"]) != asset["text_editability_exempt"]:
                     failures.append(error(f"$.layout.elements[{index}].text_editability_exempt", "must match asset manifest"))
+        for asset_id, asset in manifest_by_id.items():
+            if asset.get("boundary_policy") != "shape_mask":
+                continue
+            references = [item for item in documents["layout"]["elements"] if item.get("asset_id") == asset_id]
+            if not references or any(item.get("rounding") is not True for item in references):
+                failures.append(error("$.layout.elements", f"all references to shape_mask asset {asset_id} require rounding=true"))
+    if "asset_processing_report" in documents and "asset_manifest" in documents:
+        report_by_id = {item["asset_id"]: item for item in documents["asset_processing_report"]["assets"]}
+        for index, asset in enumerate(documents["asset_manifest"]["assets"]):
+            if asset["source"] != "cropped":
+                continue
+            result = report_by_id.get(asset["id"])
+            if result is None:
+                failures.append(error(f"$.asset_manifest.assets[{index}].id", "cropped asset lacks processing evidence"))
+            elif result["boundary_policy"] != asset["boundary_policy"]:
+                failures.append(error(f"$.asset_processing_report.assets[{asset['id']}].boundary_policy", "must match asset manifest"))
+    if "asset_processing_report" in documents and "crops" in documents:
+        report_by_id = {item["asset_id"]: item for item in documents["asset_processing_report"]["assets"]}
+        for index, crop in enumerate(documents["crops"]["assets"]):
+            result = report_by_id.get(crop["id"])
+            if result is not None and result["semantic_exclusion_boxes_px"] != crop.get("semantic_exclusion_boxes_px", []):
+                failures.append(error(f"$.asset_processing_report.assets[{crop['id']}].semantic_exclusion_boxes_px", "must match crops contract"))
+    if "planner_response" in documents and "asset_manifest" in documents:
+        response = documents["planner_response"]
+        manifest_by_id = {item["id"]: item for item in documents["asset_manifest"]["assets"]}
+        for index, decision in enumerate(response.get("representation_decisions", [])):
+            if decision["selected_representation"] != "crop":
+                continue
+            for asset_id in decision["asset_ids"]:
+                asset = manifest_by_id.get(asset_id)
+                if asset is None:
+                    failures.append(error(f"$.planner_response.representation_decisions[{index}].asset_ids", f"unknown asset: {asset_id}"))
+                elif asset.get("boundary_policy") != decision["boundary_policy"]:
+                    failures.append(error(f"$.planner_response.representation_decisions[{index}].boundary_policy", f"must match asset {asset_id}"))
     if "request" in documents and "layout" in documents:
         if documents["request"]["topic"] != documents["layout"]["metadata"]["topic"]:
             failures.append(error("$.layout.metadata.topic", "must match request topic"))

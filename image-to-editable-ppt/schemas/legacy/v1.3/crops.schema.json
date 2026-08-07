@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "crops.schema.json",
+  "title": "Crop Specification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source", "assets"],
+  "properties": {
+    "schema_version": {"const": "1.3"},
+    "source": {"type": "string", "minLength": 1},
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "output", "box_px", "padding_px", "mode", "remove_background"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "output": {"type": "string", "minLength": 1},
+          "box_px": {"type": "array", "prefixItems": [{"type": "integer", "minimum": 0}, {"type": "integer", "minimum": 0}, {"type": "integer", "minimum": 0}, {"type": "integer", "minimum": 0}], "minItems": 4, "maxItems": 4},
+          "padding_px": {"type": "integer", "minimum": 0},
+          "mode": {"enum": ["rgb", "rgba"]},
+          "remove_background": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

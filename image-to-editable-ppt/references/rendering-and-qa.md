@@ -30,6 +30,12 @@ Read this reference before rendering a generated PPTX, auditing fonts, verifying
 - Compute rotated axis-aligned bounds from OOXML transforms with a 0.5 pt rounding tolerance. Skip only elements explicitly marked `allow_overflow`.
 - Calculate `editable_text_ratio` from `editability_required=true` text elements. Emit `null/not_applicable` when the denominator is zero.
 - Validate text-bearing image exemptions against both layout and manifest.
+- Reconcile every cropped asset with `asset_processing_report.json`, verify its
+  source/crops/manifest/output hashes, and independently recheck transparent
+  PNG Alpha, zero-alpha outer edges, and the 3 px foreground safety margin.
+- For declared `relationship_groups`, verify the ordered topology before
+  building and then reconcile every connector object, source/destination
+  reference, and OOXML arrow endpoint after building.
 
 Any invalid package, page count, hash, object ID, native type, text ratio, exemption, bound, media relationship, font audit, or render count is a hard structural failure. A structural report says only `pass` or `fail`; it never substitutes for visual review.
 
@@ -44,7 +50,7 @@ Run stages in this order:
 
 ```text
 validate_spec preflight
-→ crop_assets
+→ crop_assets + asset_processing_report
 → sanitize_svg
 → validate_spec build-ready
 → build_slide

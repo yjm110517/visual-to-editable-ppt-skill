@@ -35,6 +35,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--layout", type=Path)
     result.add_argument("--qa-report", type=Path)
     result.add_argument("--asset-manifest", type=Path)
+    result.add_argument("--asset-processing-report", type=Path)
     result.add_argument("--iteration", type=int, required=True)
     result.add_argument(
         "--model-selection-mode",
@@ -75,12 +76,18 @@ def _inputs(args: argparse.Namespace) -> dict[str, Path]:
             "planner-response.schema.json": schema / "planner-response.schema.json",
         }
     if args.role == "reviewer" and args.mode == "review":
-        required = (args.render, args.layout, args.qa_report, args.asset_manifest)
+        required = (args.render, args.layout, args.qa_report, args.asset_manifest, args.asset_processing_report)
         if any(item is None for item in required):
-            raise AssetError("review requires render, layout, QA report, and asset manifest", path="$", code="cli_error", exit_code=2)
+            raise AssetError(
+                "review requires render, layout, QA report, asset manifest, and asset processing report",
+                path="$",
+                code="cli_error",
+                exit_code=2,
+            )
         return {
             "request.json": args.request, "source.png": args.source, "rendered_slide.png": args.render,
             "layout.json": args.layout, "qa_report.json": args.qa_report, "asset_manifest.json": args.asset_manifest,
+            "asset_processing_report.json": args.asset_processing_report,
             "visual-review-rubric.md": REFERENCE_DIR / "visual-review-rubric.md",
             "reviewer-response.schema.json": schema / "reviewer-response.schema.json",
         }
@@ -120,8 +127,15 @@ def main() -> int:
             expected_paths = {
                 "render": expected_iteration / "rendered_slide.png", "layout": expected_iteration / "layout.json",
                 "qa-report": expected_iteration / "qa_report.json", "asset-manifest": expected_iteration / "asset_manifest.json",
+                "asset-processing-report": expected_iteration / "asset_processing_report.json",
             }
-            actual_paths = {"render": args.render, "layout": args.layout, "qa-report": args.qa_report, "asset-manifest": args.asset_manifest}
+            actual_paths = {
+                "render": args.render,
+                "layout": args.layout,
+                "qa-report": args.qa_report,
+                "asset-manifest": args.asset_manifest,
+                "asset-processing-report": args.asset_processing_report,
+            }
             for label, expected_path in expected_paths.items():
                 if actual_paths[label] is None or actual_paths[label].resolve() != expected_path.resolve():
                     raise AssetError(f"{label} must be the current iteration artifact", path=f"--{label}", code="path_escape")

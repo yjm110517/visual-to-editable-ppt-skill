@@ -15,6 +15,7 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Validate the build-ready asset allowlist.")
     result.add_argument("--asset-dir", required=True, type=Path)
     result.add_argument("--asset-manifest", required=True, type=Path)
+    result.add_argument("--processing-report", type=Path)
     result.add_argument("--layout", type=Path)
     result.add_argument("--svg-report", type=Path)
     result.add_argument("--emit-resolved-assets", action="store_true")
@@ -49,16 +50,80 @@ def resolve_asset(asset_id: str, *, manifest: dict[str, Any], asset_dir: Path, m
     return path
 
 
-def validate_asset_set(*, asset_dir: Path, manifest_path: Path, schema_dir: Path, layout_path: Path | None = None, svg_report_path: Path | None = None) -> tuple[dict[str, Any], dict[str, Path]]:
+def _transparent_metrics(path: Path) -> tuple[int, int, bool]:
+    with Image.open(path) as image:
+        if image.format != "PNG" or image.mode != "RGBA":
+            raise AssetError("transparent assets must be RGBA PNG", path=str(path), code="boundary_policy_mismatch")
+        alpha = image.getchannel("A")
+        width, height = image.size
+        edge = (
+            [alpha.getpixel((x, 0)) for x in range(width)]
+            + [alpha.getpixel((x, height - 1)) for x in range(width)]
+            + [alpha.getpixel((0, y)) for y in range(height)]
+            + [alpha.getpixel((width - 1, y)) for y in range(height)]
+        )
+        edge_alpha_max = max(edge, default=0)
+        foreground = [
+            (x, y)
+            for y in range(height)
+            for x in range(width)
+            if alpha.getpixel((x, y)) >= 192
+        ]
+        if not foreground:
+            return edge_alpha_max, min(width, height), False
+        clearance = min(min(x, y, width - 1 - x, height - 1 - y) for x, y in foreground)
+        touches = clearance < 3
+        return edge_alpha_max, clearance, touches
+
+
+def _load_processing_results(
+    report_path: Path,
+    *,
+    schema_dir: Path,
+    manifest_path: Path,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    if not report_path.is_file():
+        raise AssetError("asset processing report is required", path=str(report_path), code="missing_processing_report")
+    report = load_contract("asset_processing_report", report_path, schema_dir)
+    if report["asset_manifest_sha256"] != sha256_file(manifest_path):
+        raise AssetError("asset processing report does not match manifest", path=str(report_path), code="processing_report_mismatch")
+    results = {item["asset_id"]: item for item in report["assets"]}
+    if len(results) != len(report["assets"]):
+        raise AssetError("asset processing report contains duplicate asset IDs", path=str(report_path), code="processing_report_mismatch")
+    return report, results
+
+
+def validate_asset_set(
+    *,
+    asset_dir: Path,
+    manifest_path: Path,
+    schema_dir: Path,
+    layout_path: Path | None = None,
+    svg_report_path: Path | None = None,
+    processing_report_path: Path | None = None,
+) -> tuple[dict[str, Any], dict[str, Path]]:
     manifest = load_contract("asset_manifest", manifest_path, schema_dir)
     try:
         validate_build_ready(manifest_path, manifest)
     except ContractError as exc:
         raise AssetError(str(exc), path=str(manifest_path), code="contract_error") from exc
     layout = load_contract("layout", layout_path, schema_dir) if layout_path else None
+    raster_crops = [item for item in manifest["assets"] if item.get("source") == "cropped"]
+    processing_report = None
+    processing_results: dict[str, dict[str, Any]] = {}
+    if raster_crops:
+        processing_path = processing_report_path or manifest_path.parent / "asset_processing_report.json"
+        processing_report, processing_results = _load_processing_results(
+            processing_path,
+            schema_dir=schema_dir,
+            manifest_path=manifest_path,
+        )
     if layout:
         try:
-            cross_validate({"layout": layout, "asset_manifest": manifest})
+            documents = {"layout": layout, "asset_manifest": manifest}
+            if processing_report:
+                documents["asset_processing_report"] = processing_report
+            cross_validate(documents)
         except ContractError as exc:
             raise AssetError(str(exc), path=str(layout_path), code="contract_error") from exc
     svg_assets = [item for item in manifest["assets"] if item["type"] == "svg"]
@@ -84,6 +149,18 @@ def validate_asset_set(*, asset_dir: Path, manifest_path: Path, schema_dir: Path
                         raise AssetError("raster format or dimensions do not match manifest", path=item["path"], code="type_mismatch")
             except OSError as exc:
                 raise AssetError("raster asset is unreadable", path=item["path"], code="unreadable_asset") from exc
+            if item.get("source") == "cropped":
+                evidence = processing_results.get(item["id"])
+                if not evidence or evidence.get("status") != "passed":
+                    raise AssetError("cropped asset lacks passed processing evidence", path=item["path"], code="processing_report_mismatch")
+                if evidence.get("boundary_policy") != item.get("boundary_policy") or evidence.get("output_sha256") != item["sha256"].lower():
+                    raise AssetError("processing evidence does not match cropped asset", path=item["path"], code="processing_report_mismatch")
+                if item.get("boundary_policy") == "transparent":
+                    edge_alpha_max, clearance, touches = _transparent_metrics(path)
+                    if edge_alpha_max != 0 or touches:
+                        raise AssetError("transparent asset failed alpha boundary checks", path=item["path"], code="asset_boundary_violation")
+                    if evidence.get("edge_alpha_max") != edge_alpha_max or evidence.get("foreground_clearance_px") != clearance or evidence.get("foreground_touches_edge") != touches:
+                        raise AssetError("processing evidence differs from actual transparent asset", path=item["path"], code="processing_report_mismatch")
         else:
             report = svg_results.get(item["id"])
             report_matches = report and all(
@@ -107,7 +184,14 @@ def main() -> int:
     component = "validate_assets"
     try:
         log_event(args.log_file, level="info", component=component, event="started", message="Asset allowlist validation started", run_id=args.run_id, iteration=args.iteration)
-        manifest, paths = validate_asset_set(asset_dir=args.asset_dir, manifest_path=args.asset_manifest, schema_dir=args.schema_dir, layout_path=args.layout, svg_report_path=args.svg_report)
+        manifest, paths = validate_asset_set(
+            asset_dir=args.asset_dir,
+            manifest_path=args.asset_manifest,
+            schema_dir=args.schema_dir,
+            layout_path=args.layout,
+            svg_report_path=args.svg_report,
+            processing_report_path=args.processing_report,
+        )
         outputs = {"asset_manifest": str(args.asset_manifest.resolve()), "asset_count": len(paths), "asset_ids": sorted(paths)}
         if args.emit_resolved_assets:
             if not args.layout:
@@ -116,6 +200,9 @@ def main() -> int:
             outputs.update({
                 "manifest_sha256": sha256_file(args.asset_manifest),
                 "layout_sha256": sha256_file(args.layout),
+                "asset_processing_report_sha256": sha256_file(args.processing_report or args.asset_manifest.parent / "asset_processing_report.json")
+                if any(item.get("source") == "cropped" for item in manifest["assets"])
+                else None,
                 "resolved_assets": [
                     {
                         "id": asset_id,
